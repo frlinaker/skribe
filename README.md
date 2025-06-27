@@ -21,6 +21,8 @@ The estimators detect these patterns during the `fit()` step, and then use this 
 
 Further, and more impressively, these systems can leverage the LLM's memory and infer data that is 'missing' from the input. For example, it is able to accurately return color information about country flags, being given as input only the name of a country. This is impossible for traditional machine learning models. Conceptually, this can be thought of as a `web-join`, i.e. the input is automatically joined with relevant information from the entire web, as captured by the LLM during its construction.
 
+Another unique feature is that these estimators can learn from ZERO rows of data, as long as it is given the names of the input and output features. It can leverage the absorbed world knowledge of the LLM to this avail. An example of this is in [examples/zero_row_classifier.py](examples/zero_row_classifier.py) which is able to build a fully functioning classifier by just the column names 'country_name' and 'has_blue_in_flag'. This is not possible with traditional machine learning models.
+
 ---
 
 ## 📁 License

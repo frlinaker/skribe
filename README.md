@@ -16,7 +16,7 @@ Coming soon to PyPI.
 For now, clone the repo and install in editable mode:
 
 ```bash
-git clone https://github.com/your-name/promptlearn
+git clone https://github.com/erkirk/promptlearn.git
 cd promptlearn
 pip install -e .
 ```

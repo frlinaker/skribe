@@ -1,0 +1,39 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pdb
+*.so
+
+# Virtual environment
+.venv/
+env/
+venv/
+
+# Editor settings
+.vscode/
+.idea/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Jupyter and IPython
+.ipynb_checkpoints/
+*.ipynb
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Prompt outputs / logs / evals
+*.log
+predictor_prompt.txt
+*.sqlite
+*.db
+
+# Test cache
+.pytest_cache/
+.cache/

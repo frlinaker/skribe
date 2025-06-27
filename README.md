@@ -47,7 +47,7 @@ print(clf.predict(X_test[:1]))
 
 During training, the `PromptClassifier` sends a tabular version of the training data to the LLM and asks it to generate a reusable classifier.
 
-Here’s an example of a prediction prompt that the LLM might return (via GPT-4, June 2025):
+Here’s an example of a prediction prompt that the LLM returns (via GPT-4, June 2025):
 
 ```text
 Given the data, a decision tree classifier can be used to predict the target class.
@@ -76,7 +76,7 @@ x = [[5.1, 3.5, 1.4, 0.2]]
 y_pred = clf.predict(x)
 ```
 
-The LLM appends this data to the prediction prompt along with some additional hardcoded instructions:
+The LLM appends this data to the prediction prompt along with a few additional hardcoded instructions:
 
 ```text
 Given: x1=5.100, x2=3.500, x3=1.400, x4=0.200
@@ -84,16 +84,15 @@ What is the predicted target class?
 Respond only with a number (e.g., 0, 1, 2).
 ```
 
-The prediction LLM might respond:
+The prediction LLM responds:
 
 ```text
 Prediction result: 0
-Prediction for new data point: setosa
 ```
 
-</details>
+Which let's us decode the prediction to 'setosa' which is correct.
 
----
+</details>
 
 <details>
 <summary><strong>🧠 XOR Logic (from raw data to symbolic inference rules)</strong></summary>
@@ -107,20 +106,21 @@ y = np.array([0, 1, 1, 0])  # XOR
 
 clf = PromptClassifier(verbose=True)
 clf.fit(X, y)
-print(clf.predict(X))
 ```
 
-The key point of this example is that the system 'realizes' that the raw data is in fact a logical XOR. This lets the LLM generate a prediction prompt that is very compact:
+The key point of this example is that `fit()` *realizes* that the raw data is in fact a logical XOR. This lets the LLM generate a prediction prompt that is very compact:
 
 ```
 Based on the provided data, it appears that the target value is the result of a XOR operation on the values of x1 and x2.
+Therefore, the classifier can be represented as follows:
+
+IF x1 XOR x2 THEN target = 1
+ELSE target = 0
 ```
 
-(Depending on the LLM, it may also output a longer explanation of what XOR is and how a decision tree can be built for it.)
+It should not be understated how powerful this is! The system has inferred a compact well-established higher-level expression of a pattern only presented to it as raw data.
 
 </details>
-
----
 
 ## 🧪 Development Status
 

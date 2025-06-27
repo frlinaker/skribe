@@ -28,10 +28,10 @@ During `predict()`, it:
 - Applies this model (a prompt!) to new inputs
 - Produces answers that reflect **not just statistical learning, but understanding**
 
-Imagine a model that learns:  
+Imagine a model that learns, and is able to express in plain English that:  
 > the target is an XOR of x1 and x2  
 > y ≈ 2·x + 3 explains this noisy relationship  
-> here’s a decision tree a human could follow, and why it works
+> a human readable decision tree like this [...] is a good prediction approach
 
 ---
 

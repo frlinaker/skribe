@@ -11,7 +11,13 @@ from sklearn.utils.validation import check_X_y, check_array
 
 
 DEFAULT_PROMPT_TEMPLATE = """\
-You are a seasoned data scientist. Conduct an analysis based on the following data, and output only the final trained classifier (like a decision tree, equation, etc) that will be conveyed in the form of an LLM prompt to another system. The rules will be executed as given so you need to have all the weights, equations, thresholds, etc in your output. The classifier should be able to accurately predict the value (class) of the last column based on the data in the other columns. Respond in plain text ascii only.
+You are a seasoned data scientist tasked with building a classification prompt for an LLM.
+
+Treat the data as a sample of a much larger problem domain, so don't just memorize the data as-is.
+
+Look at the name of the target column and figure out its meaning. It the input features seem to be text or text entities, it is OK to output a prompt that will ask the LLM to reason by itself what the target value could be.
+
+Conduct an analysis based on the following data, and output only the final trained classifier (like a decision tree, human-readable instructions, etc) that will be conveyed in the form of an LLM prompt to another system. The rules will be executed as given so you need to have all the weights, equations, thresholds, etc in your output. The classifier should be able to accurately predict the value (class) of the last column based on the data in the other columns. Respond in plain text ascii only.
 
 Data:
 {data}
@@ -49,7 +55,10 @@ class PromptClassifier(BaseEstimator, ClassifierMixin):
             X_values, y = check_X_y(X, y)
 
         self.feature_names_in_: List[str] = self._get_feature_names(X)
-        data_rows: List[str] = ["\t".join(self.feature_names_in_ + ["target"])]
+        self.target_name_: str = y.name if isinstance(y, pd.Series) and y.name else "target"
+
+        header: List[str] = self.feature_names_in_ + [self.target_name_]
+        data_rows: List[str] = ["\t".join(header)]
 
         for xi, yi in zip(X_values, y):
             row: List[str] = list(map(str, xi)) + [str(yi)]
@@ -78,16 +87,20 @@ class PromptClassifier(BaseEstimator, ClassifierMixin):
 
     def _predict_one(self, x: Union[np.ndarray, pd.Series]) -> int:
         if isinstance(x, pd.Series):
-            feature_string: str = ", ".join(f"{k}={v:.3f}" for k, v in x.items())
+            feature_string = ", ".join(
+                f"{k}={v:.3f}" if isinstance(v, (int, float)) else f"{k}='{v}'"
+                for k, v in x.items()
+            )
         else:
-            feature_string: str = ", ".join(
-                f"{name}={value:.3f}" for name, value in zip(self.feature_names_in_, x)
+            feature_string = ", ".join(
+                f"{name}={value:.3f}" if isinstance(value, (int, float)) else f"{name}='{value}'"
+                for name, value in zip(self.feature_names_in_, x)
             )
 
-        inference_prompt: str = (
+        inference_prompt = (
             self.classification_prompt_ + "\n\n"
             f"Given: {feature_string}\n"
-            "What is the predicted target class?\n"
+            f"What is the predicted {self.target_name_}?\n"
             "Respond only with a number (e.g., 0, 1, 2)."
         )
 
@@ -99,7 +112,7 @@ class PromptClassifier(BaseEstimator, ClassifierMixin):
                 model=self.model,
                 messages=[{"role": "user", "content": inference_prompt}]
             )
-            result: str = response.choices[0].message.content.strip()
+            result = response.choices[0].message.content.strip()
             if self.verbose:
                 logging.info("Prediction result: " + result)
             return int(result)

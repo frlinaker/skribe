@@ -1,4 +1,4 @@
-# 🧠 promptlearn
+# promptlearn
 
 **promptlearn** provides `scikit-learn`-compatible estimators powered by LLMs, such as:
 

@@ -1,27 +1,81 @@
-# promptlearn
+# ⚡️ promptlearn
 
-**promptlearn** is a drop-in extension for `scikit-learn` that brings the power of LLMs to existing machine learning pipelines.
-It provides `scikit-learn`-compatible estimators powered by LLMs, such as:
+**promptlearn** supercharges your `scikit-learn` pipelines with the cognitive power of large language models.  
+It lets you swap traditional machine learning estimators for LLM-backed alternatives — no retraining, no new APIs, just smarter results.
 
-- `PromptClassifier` – classifies data with LLM prompts
-- `PromptRegressor` – regresses data with LLM prompts
+### 🧠 LLMs as Estimators
 
-The estimators support standard `fit()` and `predict()` methods, and can be used in the same way as any other `scikit-learn` estimator.
+`promptlearn` provides plug-and-play, `scikit-learn`-compatible estimators that are powered by prompting rather than parameter tuning:
 
-The noteworthy difference from traditional estimators is that the LLM is able to *automatically detect and exploit higher-level patterns* in the data,
-for example
+- **`PromptClassifier`** – classifies inputs through intelligent, human-like reasoning  
+- **`PromptRegressor`** – uncovers numeric relationships via freeform pattern discovery
 
-> the target is an XOR of x1 and x2
+Just like their traditional counterparts, these estimators support `.fit()` and `.predict()`, and work seamlessly with the entire `scikit-learn` ecosystem.  
+But what happens under the hood is fundamentally different.
 
-> the equation y=2x*3 is a good linear fit for this noisy data
+---
 
-> here is a simple human-readable decision tree that classifies this data well (followed by the actual tree)
+### 🔮 Beyond Machine Learning
 
-The estimators detect these patterns during the `fit()` step, and then use this knowledge to output exact predictions in the `predict()` step.
+Where standard models see data points, LLMs see **meaning**.
 
-Further, and more impressively, these systems can leverage the LLM's memory and infer data that is 'missing' from the input. For example, it is able to accurately return color information about country flags, being given as input only the name of a country. This is impossible for traditional machine learning models. Conceptually, this can be thought of as a `web-join`, i.e. the input is automatically joined with relevant information from the entire web, as captured by the LLM during its construction.
+During `fit()`, the model:
+- Parses tabular data as natural information
+- Infers mathematical structure, logic, and latent world knowledge
+- Condenses it into a symbolic or verbal model
 
-Another unique feature is that these estimators can learn from ZERO rows of data, as long as it is given the names of the input and output features. It can leverage the absorbed world knowledge of the LLM to this avail. An example of this is in [examples/zero_row_classifier.py](examples/zero_row_classifier.py) which is able to build a fully functioning classifier by just the column names 'country_name' and 'has_blue_in_flag'. This is not possible with traditional machine learning models.
+During `predict()`, it:
+- Applies this model (a prompt!) to new inputs
+- Produces answers that reflect **not just statistical learning, but understanding**
+
+Imagine a model that learns:  
+> the target is an XOR of x1 and x2  
+> y ≈ 2·x + 3 explains this noisy relationship  
+> here’s a decision tree a human could follow, and why it works
+
+---
+
+### 🌍 Embedded World Knowledge
+
+One of `promptlearn`’s most astonishing capabilities is its ability to fill in missing data using *embedded global knowledge*.  
+
+For example:
+```
+Input: country_name = "Sweden"
+Output: has_blue_in_flag = 1
+```
+
+This is not feature extraction. It is *reasoning*.  
+Where traditional models fail on incomplete data, LLM-based estimators can infer, enrich, and generalize — effectively performing a **web-scale join** against the model's internal representation of the world.
+
+---
+
+### 🕳 Zero-Row Learning
+
+**promptlearn can train on zero examples.**  
+You read that right: it can learn a functioning model with *no data at all*, as long as it knows the **names** of the inputs and the target.
+
+Example:
+
+```
+Input columns: ['country_name']
+Target column: 'has_blue_in_flag'
+Training rows: 0
+Result: a working classifier.
+```
+
+Try it: [examples/zero_row_classifier.py](examples/zero_row_classifier.py)
+
+This is fundamentally impossible with traditional ML. With LLMs, it's just inference.
+
+---
+
+## 🔗 Why it matters
+
+`promptlearn` isn’t just a drop-in tool. It’s a paradigm shift:  
+From **pattern matching** to **knowledge-aware inference**.  
+From **training on data** to **prompting on context**.  
+From **model parameters** to **language-native logic**.
 
 ---
 

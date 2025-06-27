@@ -9,7 +9,7 @@ from sklearn.metrics import mean_squared_error
 
 
 DEFAULT_REGRESSION_PROMPT = """\
-You are a principal data scientist. Analyze the following data and output only the final trained regression function (e.g., a linear or nonlinear equation) that best fits the data. The data has one of more features as input and the last column is the target value.
+You are a seasoned data scientist. Analyze the following data and output only the final trained regression function (e.g., a linear or nonlinear equation) that best fits the data. The data has one of more features as input and the last column is the target value.
 
 The function must be executable as written — include weights, operations, and any thresholds required to use it as a predictive formula. Your answer should not include explanations, only the final model. Respond in plain text ascii only.
 

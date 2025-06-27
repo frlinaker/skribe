@@ -10,7 +10,8 @@ setup(
     packages=find_packages(),
     install_requires=[
         "scikit-learn",
-        "openai"
+        "openai",
+        "pandas"
     ],
     python_requires=">=3.8",
     classifiers=[

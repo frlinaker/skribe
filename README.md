@@ -23,9 +23,12 @@ pip install -e .
 
 ---
 
-## 🚀 Usage Example
+## 🚀 Examples
 
-See [`examples/iris_prompt_classifier.py`](examples/iris_prompt_classifier.py) for a complete working demo.
+See the [`examples/`](examples/) folder for runnable demos. Below are two key examples:
+
+<details>
+<summary><strong>🪷 Iris Classifier (traditional Scikit-learn example)</strong></summary>
 
 ```python
 from promptlearn import PromptClassifier
@@ -39,8 +42,6 @@ clf = PromptClassifier(verbose=True)
 clf.fit(X_train, y_train)
 print(clf.predict(X_test[:1]))
 ```
-
----
 
 ## 🧠 What the LLM Sees
 
@@ -66,8 +67,6 @@ Given the data, a decision tree classifier can be used to predict the target cla
 Respond with the predicted target given a feature string.
 ```
 
----
-
 ## 🎯 Inference Output
 
 When you pass a new data point into `.predict()`:
@@ -91,6 +90,35 @@ The prediction LLM might respond:
 Prediction result: 0
 Prediction for new data point: setosa
 ```
+
+</details>
+
+---
+
+<details>
+<summary><strong>🧠 XOR Logic (from raw data to symbolic inference rules)</strong></summary>
+
+```python
+import numpy as np
+from promptlearn import PromptClassifier
+
+X = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
+y = np.array([0, 1, 1, 0])  # XOR
+
+clf = PromptClassifier(verbose=True)
+clf.fit(X, y)
+print(clf.predict(X))
+```
+
+The key point of this example is that the system 'realizes' that the raw data is in fact a logical XOR. This lets the LLM generate a prediction prompt that is very compact:
+
+```
+Based on the provided data, it appears that the target value is the result of a XOR operation on the values of x1 and x2.
+```
+
+(Depending on the LLM, it may also output a longer explanation of what XOR is and how a decision tree can be built for it.)
+
+</details>
 
 ---
 

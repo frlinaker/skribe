@@ -6,9 +6,9 @@ from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.metrics import mean_squared_error
 
 DEFAULT_REGRESSION_PROMPT = """\
-You are a principal data scientist. Analyze the following data and output only the final trained regression function (e.g., a linear or nonlinear equation) that best fits the target values from the input features. Consider higher-order polynomials, interactions, and other nonlinear transformations of the input features.
+You are a principal data scientist. Analyze the following data and output only the final trained regression function (e.g., a linear or nonlinear equation) that best fits the data. The data has one of more features as input and the last column is the target value.
 
-The function must be executable as written — include weights, operations, and any thresholds required to use it as a predictive formula. Your answer should not include explanations, only the final model.
+The function must be executable as written — include weights, operations, and any thresholds required to use it as a predictive formula. Your answer should not include explanations, only the final model. Respond in plain text ascii only.
 
 Data:
 {data}
@@ -18,15 +18,11 @@ class PromptRegressor(BaseEstimator, RegressorMixin):
     def __init__(
         self,
         prompt_template=None,
-        model="gpt-4",
-        temperature=0.0,
-        max_tokens=800,
+        model="o4-mini",
         verbose=False
     ):
         self.prompt_template = prompt_template or DEFAULT_REGRESSION_PROMPT
         self.model = model
-        self.temperature = temperature
-        self.max_tokens = max_tokens
         self.verbose = verbose
 
         openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -50,9 +46,7 @@ class PromptRegressor(BaseEstimator, RegressorMixin):
         try:
             response = self.llm_client.chat.completions.create(
                 model=self.model,
-                messages=[{"role": "user", "content": self.training_prompt_}],
-                temperature=self.temperature,
-                max_tokens=self.max_tokens
+                messages=[{"role": "user", "content": self.training_prompt_}]
             )
             self.regression_formula_ = response.choices[0].message.content.strip()
 
@@ -82,10 +76,10 @@ class PromptRegressor(BaseEstimator, RegressorMixin):
             response = self.llm_client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": "user", "content": inference_prompt}],
-                temperature=0.0,
-                max_tokens=10
             )
             result = response.choices[0].message.content.strip()
+            if self.verbose:
+                logging.info(f"Regression prediction result: {result}\n")
             return float(result)
         except Exception as e:
             raise RuntimeError(f"Prediction failed for input {x}: {e}")

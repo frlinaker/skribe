@@ -1,14 +1,11 @@
 # promptlearn/classifier.py
 
-from typing import Optional, List, Union
-import numpy as np
+from typing import Optional, List
 import pandas as pd
-from sklearn.base import BaseEstimator, ClassifierMixin
+from sklearn.base import ClassifierMixin
 from sklearn.metrics import accuracy_score
 from sklearn.utils.validation import check_X_y, check_array
-
 from .base import BasePromptEstimator
-
 
 DEFAULT_PROMPT_TEMPLATE = """\
 You are a seasoned data scientist tasked with building a classification prompt for an LLM.
@@ -23,15 +20,9 @@ Data:
 {data}
 """
 
-
-class PromptClassifier(BaseEstimator, ClassifierMixin, BasePromptEstimator):
-    def __init__(
-        self,
-        prompt_template: Optional[str] = None,
-        model: str = "o4-mini",
-        verbose: bool = False
-    ) -> None:
-        BasePromptEstimator.__init__(self, model, prompt_template or DEFAULT_PROMPT_TEMPLATE, verbose)
+class PromptClassifier(BasePromptEstimator, ClassifierMixin):
+    def __init__(self, model: str = "o4-mini", prompt_template: Optional[str] = None, verbose: bool = False):
+        super().__init__(model, prompt_template or DEFAULT_PROMPT_TEMPLATE, verbose)
 
     def fit(self, X, y) -> "PromptClassifier":
         if not isinstance(X, pd.DataFrame):

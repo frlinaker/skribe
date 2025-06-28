@@ -1,14 +1,11 @@
 # promptlearn/regressor.py
 
-from typing import Optional, List, Union
-import numpy as np
+from typing import Optional, List
 import pandas as pd
-from sklearn.base import BaseEstimator, RegressorMixin
+from sklearn.base import RegressorMixin
 from sklearn.metrics import mean_squared_error
 from sklearn.utils.validation import check_X_y, check_array
-
 from .base import BasePromptEstimator
-
 
 DEFAULT_PROMPT_TEMPLATE = """\
 You are a seasoned data scientist. Analyze the following data and output only the final trained regression function (e.g., a linear or nonlinear equation) that best fits the data. The data has one of more features as input and the last column is the target value.
@@ -19,15 +16,9 @@ Data:
 {data}
 """
 
-
-class PromptRegressor(BaseEstimator, RegressorMixin, BasePromptEstimator):
-    def __init__(
-        self,
-        prompt_template: Optional[str] = None,
-        model: str = "o4-mini",
-        verbose: bool = False
-    ) -> None:
-        BasePromptEstimator.__init__(self, model, prompt_template or DEFAULT_PROMPT_TEMPLATE, verbose)
+class PromptRegressor(BasePromptEstimator, RegressorMixin):
+    def __init__(self, model: str = "o4-mini", prompt_template: Optional[str] = None, verbose: bool = False):
+        super().__init__(model, prompt_template or DEFAULT_PROMPT_TEMPLATE, verbose)
 
     def fit(self, X, y) -> "PromptRegressor":
         if not isinstance(X, pd.DataFrame):

@@ -6,9 +6,10 @@ import logging
 from typing import List, Union
 import numpy as np
 import pandas as pd
+from sklearn.base import BaseEstimator
 
 
-class BasePromptEstimator:
+class BasePromptEstimator(BaseEstimator):
     def __init__(self, model: str, prompt_template: str, verbose: bool = False):
         self.model = model
         self.prompt_template = prompt_template

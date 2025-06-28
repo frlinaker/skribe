@@ -2,6 +2,7 @@ import os
 import openai
 import logging
 from typing import List, Union
+from io import StringIO
 import numpy as np
 import pandas as pd
 import warnings
@@ -99,3 +100,31 @@ class BasePromptEstimator(BaseEstimator):
 
         openai.api_key = api_key
         self.llm_client = openai.OpenAI()
+
+    def _parse_tsv(self, tsv: str) -> pd.DataFrame:
+        """Parse tab-separated values (TSV) into a pandas DataFrame."""
+        try:
+            # Clean common LLM output artifacts
+            tsv_cleaned = tsv.strip().replace("```", "").strip()
+
+            # Use StringIO to treat the string like a file
+            df = pd.read_csv(StringIO(tsv_cleaned), sep="\t")
+
+            # Optionally: strip whitespace from column names
+            df.columns = df.columns.str.strip()
+
+            return df
+
+        except Exception as e:
+            raise ValueError(f"Failed to parse TSV output:\n{tsv}\nError: {e}")
+
+    def sample(self, n: int = 5) -> pd.DataFrame:
+        """Generate n synthetic examples that illustrate the heuristic."""
+        prompt = (
+            f"{self.heuristic_}\n\n"
+            f"Please generate {n} example rows in tabular format with the following columns:\n"
+            f"{', '.join(self.feature_names_in_ + [self.target_name_])}.\n"
+            f"Use tab-separated format. Do not explain."
+        )
+        text = self._call_llm(prompt)
+        return self._parse_tsv(text)

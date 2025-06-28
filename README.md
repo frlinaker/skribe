@@ -157,16 +157,16 @@ From **parameter optimization** → to **language-native heuristics**
 
 ### 🧩 Scikit-LLM
 
-[Scikit-LLM](https://github.com/BeastByteAI/scikit-llm) is an existing library that provides scikit-learn-compatible wrappers for zero-shot and few-shot text classification using large language models. It supports classifiers like `ZeroShotGPTClassifier` and `FewShotGPTClassifier`, and is designed for lightweight integration of LLMs into NLP pipelines.
+[Scikit-LLM](https://github.com/BeastByteAI/scikit-llm) is an existing library that provides scikit-learn-compatible wrappers for zero-shot and few-shot text classification using large language models. It supports classifiers like `ZeroShotGPTClassifier` and `FewShotGPTClassifier`, and is designed for lightweight integration of LLMs into NLP pipelines. Prompts are made with pre-defined templates and only the sampling of data to be included during predictions is done by the package during the fitting stage.
 
 **Key Differences from `promptlearn`:**
 
 | Capability                          | Scikit-LLM                          | promptlearn (this package)               |
 |-------------------------------------|-------------------------------------|------------------------------------------|
+| Self-generated LLM prompts to attack problems  | ❌ No                                | ✅ Yes                                    |
+| Regression support                  | ❌ No                                | ✅ Yes                                    |
 | Scikit-learn API                    | ✅ Yes                               | ✅ Yes                                    |
 | Zero-shot classification            | ✅ Yes                               | ✅ Yes                                    |
-| Regression support                  | ❌ No                                | ✅ Yes                                    |
-| Generates freeform prompts (heuristics)  | ❌ No                                | ✅ Yes                                    |
 | Learns from tabular data            | ⚠️ Only stores labels                | ✅ Extracts symbolic pattern              |
 | Generates synthetic examples        | ❌ No                                | ✅ `.sample()` generates valid rows       |
 | Interpretable model output          | ❌ Black-box prompting               | ✅ Human-readable heuristics              |

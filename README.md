@@ -163,7 +163,7 @@ From **parameter optimization** → to **language-native heuristics**
 
 | Capability                          | Scikit-LLM                          | promptlearn (this package)               |
 |-------------------------------------|-------------------------------------|------------------------------------------|
-| Self-generated LLM prompts to attack problems  | ❌ No                                | ✅ Yes                                    |
+| Self-generates LLM prompts to attack problems  | ❌ No                                | ✅ Yes                                    |
 | Regression support                  | ❌ No                                | ✅ Yes                                    |
 | Scikit-learn API                    | ✅ Yes                               | ✅ Yes                                    |
 | Zero-shot classification            | ✅ Yes                               | ✅ Yes                                    |

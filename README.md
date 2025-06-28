@@ -93,6 +93,36 @@ This is fundamentally impossible in traditional ML — but not for a language mo
 
 ---
 
+### 🧪 Self-Descriptive Models with `.sample()`
+
+`promptlearn` estimators aren’t black boxes — they can speak for themselves.  
+Using `.sample()`, you can extract representative example rows from the heuristic itself, making the model behavior interpretable and reproducible.
+
+Call `.sample(n)` on any trained estimator to generate synthetic rows that conform to its learned heuristic:
+
+```python
+>>> model.sample(3)
+```
+
+Example output:
+
+```
+fruit_name    is_citrus
+Lemon         1
+Apple         0
+Grapefruit    1
+```
+
+This is a live demonstration of the model’s internal reasoning, surfaced as readable examples.  
+It’s useful for:
+- Quick inspection of what the model believes
+- Creating test cases or bootstrapped data
+- Interactive documentation of behavior
+
+> Think of it as “What would this model say a good input/output pair looks like?”
+
+---
+
 ### 💾 Model Persistence (now with `joblib` support!)
 
 Trained estimators (i.e., heuristics) can be saved and loaded with `joblib`:

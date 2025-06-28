@@ -9,8 +9,7 @@ from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.metrics import mean_squared_error
 from sklearn.utils.validation import check_X_y, check_array
 
-
-DEFAULT_REGRESSION_PROMPT = """\
+DEFAULT_PROMPT_TEMPLATE = """\
 You are a seasoned data scientist. Analyze the following data and output only the final trained regression function (e.g., a linear or nonlinear equation) that best fits the data. The data has one of more features as input and the last column is the target value.
 
 The function must be executable as written — include weights, operations, and any thresholds required to use it as a predictive formula. Your answer should not include explanations, only the final model. Respond in plain text ascii only.
@@ -26,7 +25,7 @@ class PromptRegressor(BaseEstimator, RegressorMixin):
         model: str = "o4-mini",
         verbose: bool = False
     ) -> None:
-        self.prompt_template: str = prompt_template or DEFAULT_REGRESSION_PROMPT
+        self.prompt_template: str = prompt_template or DEFAULT_PROMPT_TEMPLATE
         self.model: str = model
         self.verbose: bool = verbose
 
@@ -49,11 +48,14 @@ class PromptRegressor(BaseEstimator, RegressorMixin):
         else:
             X_values, y = check_X_y(X, y)
 
-        self.feature_names_in_: List[str] = self._get_feature_names(X)
-        data_rows: List[str] = ["\t".join(self.feature_names_in_ + ["target"])]
+        self.feature_names_in_ = self._get_feature_names(X)
+        self.target_name_: str = y.name if isinstance(y, pd.Series) and y.name else "target"
+
+        header: List[str] = self.feature_names_in_ + [self.target_name_]
+        data_rows: List[str] = ["\t".join(header)]
 
         for xi, yi in zip(X_values, y):
-            row: List[str] = list(map(str, xi)) + [str(yi)]
+            row = list(map(str, xi)) + [str(yi)]
             data_rows.append("\t".join(row))
 
         formatted_data: str = "\n".join(data_rows)
@@ -73,22 +75,26 @@ class PromptRegressor(BaseEstimator, RegressorMixin):
                 logging.info("Learned regression formula:\n" + self.regression_formula_)
 
         except Exception as e:
-            raise RuntimeError(f"LLM failed to generate regression prompt: {e}")
+            raise RuntimeError(f"LLM failed to generate regression formula: {e}")
 
         return self
 
     def _predict_one(self, x: Union[np.ndarray, pd.Series]) -> float:
         if isinstance(x, pd.Series):
-            feature_string: str = ", ".join(f"{k}={v:.3f}" for k, v in x.items())
+            feature_string = ", ".join(
+                f"{k}={v:.3f}" if isinstance(v, (int, float)) else f"{k}='{v}'"
+                for k, v in x.items()
+            )
         else:
-            feature_string: str = ", ".join(
-                f"{name}={value:.3f}" for name, value in zip(self.feature_names_in_, x)
+            feature_string = ", ".join(
+                f"{name}={value:.3f}" if isinstance(value, (int, float)) else f"{name}='{value}'"
+                for name, value in zip(self.feature_names_in_, x)
             )
 
-        inference_prompt: str = (
+        inference_prompt = (
             self.regression_formula_ + "\n\n"
             f"Given: {feature_string}\n"
-            "What is the predicted target value?\n"
+            f"What is the predicted {self.target_name_}?\n"
             "Respond only with a number (e.g., 4.2)"
         )
 
@@ -100,7 +106,7 @@ class PromptRegressor(BaseEstimator, RegressorMixin):
                 model=self.model,
                 messages=[{"role": "user", "content": inference_prompt}]
             )
-            result: str = response.choices[0].message.content.strip()
+            result = response.choices[0].message.content.strip()
             if self.verbose:
                 logging.info(f"Regression prediction result: {result}")
             return float(result)

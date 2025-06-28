@@ -51,6 +51,6 @@ class PromptRegressor(BasePromptEstimator, RegressorMixin):
             X_checked = check_array(X)
             return [self._predict_one(x) for x in X_checked]
 
-    def score(self, X, y) -> float:
+    def score(self, X, y, sample_weight=None) -> float:
         y_pred = self.predict(X)
-        return -mean_squared_error(y, y_pred)
+        return -mean_squared_error(y, y_pred, sample_weight=sample_weight)

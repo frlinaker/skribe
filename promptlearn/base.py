@@ -1,5 +1,3 @@
-# promptlearn/base.py
-
 import os
 import openai
 import logging
@@ -10,6 +8,12 @@ from sklearn.base import BaseEstimator
 
 
 class BasePromptEstimator(BaseEstimator):
+    model: str
+    prompt_template: str
+    verbose: bool
+    feature_names_in_: List[str]
+    target_name_: str
+
     def __init__(self, model: str, prompt_template: str, verbose: bool = False):
         self.model = model
         self.prompt_template = prompt_template
@@ -22,7 +26,7 @@ class BasePromptEstimator(BaseEstimator):
         return X.columns.tolist() if isinstance(X, pd.DataFrame) else [f"x{i+1}" for i in range(X.shape[1])]
 
     def _get_target_name(self, y: Union[np.ndarray, pd.Series]) -> str:
-        return y.name if isinstance(y, pd.Series) and y.name else "target"
+        return str(y.name) if isinstance(y, pd.Series) and y.name else "target"
 
     def _format_training_data(self, X: np.ndarray, y: Union[np.ndarray, List], feature_names: List[str], target_name: str) -> str:
         rows = ["\t".join(feature_names + [target_name])]
@@ -51,7 +55,8 @@ class BasePromptEstimator(BaseEstimator):
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}]
             )
-            result = response.choices[0].message.content.strip()
+            result = (response.choices[0].message.content or "").strip()
+
             if self.verbose:
                 logging.info(f"LLM result: {result}")
             return result

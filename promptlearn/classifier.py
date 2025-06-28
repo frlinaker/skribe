@@ -55,6 +55,6 @@ class PromptClassifier(BasePromptEstimator, ClassifierMixin):
             X_checked = check_array(X)
             return [self._predict_one(x) for x in X_checked]
 
-    def score(self, X, y) -> float:
+    def score(self, X, y, sample_weight=None) -> float:
         y_pred = self.predict(X)
-        return accuracy_score(y, y_pred)
+        return float(accuracy_score(y, y_pred, sample_weight=sample_weight))

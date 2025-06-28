@@ -37,3 +37,6 @@ predictor_prompt.txt
 # Test cache
 .pytest_cache/
 .cache/
+
+# Joblib objects
+*.joblib

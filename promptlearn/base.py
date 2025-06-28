@@ -4,6 +4,8 @@ import logging
 from typing import List, Union
 import numpy as np
 import pandas as pd
+import warnings
+
 from sklearn.base import BaseEstimator
 from sklearn.utils.validation import check_X_y
 
@@ -86,6 +88,14 @@ class BasePromptEstimator(BaseEstimator):
 
     def __setstate__(self, state):
         self.__dict__.update(state)
-        # Recreate client after unpickling
-        openai.api_key = os.getenv("OPENAI_API_KEY")
+        api_key = os.getenv("OPENAI_API_KEY")
+
+        if not api_key:
+            warnings.warn(
+                "OPENAI_API_KEY is not set. "
+                "This PromptEstimator cannot make predictions until the key is available.",
+                RuntimeWarning
+            )
+
+        openai.api_key = api_key
         self.llm_client = openai.OpenAI()

@@ -1,13 +1,14 @@
-import os
-import openai
-import logging
-from typing import Optional, List, Union
+# promptlearn/regressor.py
 
+from typing import Optional, List, Union
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.metrics import mean_squared_error
 from sklearn.utils.validation import check_X_y, check_array
+
+from .base import BasePromptEstimator
+
 
 DEFAULT_PROMPT_TEMPLATE = """\
 You are a seasoned data scientist. Analyze the following data and output only the final trained regression function (e.g., a linear or nonlinear equation) that best fits the data. The data has one of more features as input and the last column is the target value.
@@ -18,112 +19,47 @@ Data:
 {data}
 """
 
-class PromptRegressor(BaseEstimator, RegressorMixin):
+
+class PromptRegressor(BaseEstimator, RegressorMixin, BasePromptEstimator):
     def __init__(
         self,
         prompt_template: Optional[str] = None,
         model: str = "o4-mini",
         verbose: bool = False
     ) -> None:
-        self.prompt_template: str = prompt_template or DEFAULT_PROMPT_TEMPLATE
-        self.model: str = model
-        self.verbose: bool = verbose
+        BasePromptEstimator.__init__(self, model, prompt_template or DEFAULT_PROMPT_TEMPLATE, verbose)
 
-        openai.api_key = os.getenv("OPENAI_API_KEY")
-        self.llm_client = openai.OpenAI()
-
-    def _get_feature_names(self, X: Union[np.ndarray, pd.DataFrame]) -> List[str]:
-        if isinstance(X, pd.DataFrame):
-            return X.columns.tolist()
-        else:
-            return [f"x{i+1}" for i in range(X.shape[1])]
-
-    def fit(
-        self,
-        X: Union[np.ndarray, pd.DataFrame],
-        y: Union[np.ndarray, List[float], pd.Series]
-    ) -> "PromptRegressor":
-        if isinstance(X, pd.DataFrame):
-            X_values = X.values
-        else:
-            X_values, y = check_X_y(X, y)
+    def fit(self, X, y) -> "PromptRegressor":
+        if not isinstance(X, pd.DataFrame):
+            X, y = check_X_y(X, y)
 
         self.feature_names_in_ = self._get_feature_names(X)
-        self.target_name_: str = y.name if isinstance(y, pd.Series) and y.name else "target"
+        self.target_name_ = self._get_target_name(y)
+        X_values = X.values if isinstance(X, pd.DataFrame) else X
 
-        header: List[str] = self.feature_names_in_ + [self.target_name_]
-        data_rows: List[str] = ["\t".join(header)]
+        formatted_data = self._format_training_data(X_values, y, self.feature_names_in_, self.target_name_)
+        self.training_prompt_ = self.prompt_template.format(data=formatted_data)
 
-        for xi, yi in zip(X_values, y):
-            row = list(map(str, xi)) + [str(yi)]
-            data_rows.append("\t".join(row))
-
-        formatted_data: str = "\n".join(data_rows)
-        self.training_prompt_: str = self.prompt_template.format(data=formatted_data)
-
-        if self.verbose:
-            logging.info("Generated regression prompt:\n" + self.training_prompt_)
-
-        try:
-            response = self.llm_client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": self.training_prompt_}]
-            )
-            self.regression_formula_: str = response.choices[0].message.content.strip()
-
-            if self.verbose:
-                logging.info("Learned regression formula:\n" + self.regression_formula_)
-
-        except Exception as e:
-            raise RuntimeError(f"LLM failed to generate regression formula: {e}")
-
+        self.regression_formula_ = self._call_llm(self.training_prompt_)
         return self
 
-    def _predict_one(self, x: Union[np.ndarray, pd.Series]) -> float:
-        if isinstance(x, pd.Series):
-            feature_string = ", ".join(
-                f"{k}={v:.3f}" if isinstance(v, (int, float)) else f"{k}='{v}'"
-                for k, v in x.items()
-            )
-        else:
-            feature_string = ", ".join(
-                f"{name}={value:.3f}" if isinstance(value, (int, float)) else f"{name}='{value}'"
-                for name, value in zip(self.feature_names_in_, x)
-            )
-
-        inference_prompt = (
+    def _predict_one(self, x) -> float:
+        feature_string = self._format_features(x)
+        prompt = (
             self.regression_formula_ + "\n\n"
             f"Given: {feature_string}\n"
             f"What is the predicted {self.target_name_}?\n"
             "Respond only with a number (e.g., 4.2)"
         )
+        return float(self._call_llm(prompt))
 
-        if self.verbose:
-            logging.info("Regression inference prompt:\n" + inference_prompt)
-
-        try:
-            response = self.llm_client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": inference_prompt}]
-            )
-            result = response.choices[0].message.content.strip()
-            if self.verbose:
-                logging.info(f"Regression prediction result: {result}")
-            return float(result)
-        except Exception as e:
-            raise RuntimeError(f"Prediction failed for input {x}: {e}")
-
-    def predict(self, X: Union[np.ndarray, pd.DataFrame]) -> List[float]:
+    def predict(self, X) -> List[float]:
         if isinstance(X, pd.DataFrame):
             return [self._predict_one(row) for _, row in X.iterrows()]
         else:
             X_checked = check_array(X)
             return [self._predict_one(x) for x in X_checked]
 
-    def score(
-        self,
-        X: Union[np.ndarray, pd.DataFrame],
-        y: Union[np.ndarray, List[float], pd.Series]
-    ) -> float:
-        y_pred: List[float] = self.predict(X)
+    def score(self, X, y) -> float:
+        y_pred = self.predict(X)
         return -mean_squared_error(y, y_pred)

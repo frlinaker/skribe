@@ -11,7 +11,8 @@ setup(
     install_requires=[
         "scikit-learn",
         "openai",
-        "pandas"
+        "pandas",
+        "joblib"
     ],
     python_requires=">=3.8",
     classifiers=[

@@ -4,7 +4,7 @@ from typing import Optional, List
 import pandas as pd
 from sklearn.base import ClassifierMixin
 from sklearn.metrics import accuracy_score
-from sklearn.utils.validation import check_X_y, check_array
+from sklearn.utils.validation import check_array
 from .base import BasePromptEstimator
 
 DEFAULT_PROMPT_TEMPLATE = """\
@@ -25,23 +25,13 @@ class PromptClassifier(BasePromptEstimator, ClassifierMixin):
         super().__init__(model, prompt_template or DEFAULT_PROMPT_TEMPLATE, verbose)
 
     def fit(self, X, y) -> "PromptClassifier":
-        if not isinstance(X, pd.DataFrame):
-            X, y = check_X_y(X, y)
-
-        self.feature_names_in_ = self._get_feature_names(X)
-        self.target_name_ = self._get_target_name(y)
-        X_values = X.values if isinstance(X, pd.DataFrame) else X
-
-        formatted_data = self._format_training_data(X_values, y, self.feature_names_in_, self.target_name_)
-        self.training_prompt_ = self.prompt_template.format(data=formatted_data)
-
-        self.classification_prompt_ = self._call_llm(self.training_prompt_)
+        self._fit_common(X, y)
         return self
 
     def _predict_one(self, x) -> int:
         feature_string = self._format_features(x)
         prompt = (
-            self.classification_prompt_ + "\n\n"
+            self.heuristic_ + "\n\n"
             f"Given: {feature_string}\n"
             f"What is the predicted {self.target_name_}?\n"
             "Respond only with a number (e.g., 0, 1, 2)."

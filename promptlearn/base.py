@@ -5,6 +5,7 @@ from typing import List, Union
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator
+from sklearn.utils.validation import check_X_y
 
 
 class BasePromptEstimator(BaseEstimator):
@@ -12,6 +13,7 @@ class BasePromptEstimator(BaseEstimator):
     prompt_template: str
     verbose: bool
     feature_names_in_: List[str]
+    heuristic_: str
     target_name_: str
 
     def __init__(self, model: str, prompt_template: str, verbose: bool = False):
@@ -62,3 +64,15 @@ class BasePromptEstimator(BaseEstimator):
             return result
         except Exception as e:
             raise RuntimeError(f"LLM call failed: {e}")
+
+    def _fit_common(self, X, y) -> None:
+        if not isinstance(X, pd.DataFrame):
+            X, y = check_X_y(X, y)
+
+        self.feature_names_in_ = self._get_feature_names(X)
+        self.target_name_ = self._get_target_name(y)
+        X_values = X.values if isinstance(X, pd.DataFrame) else X
+
+        formatted_data = self._format_training_data(X_values, y, self.feature_names_in_, self.target_name_)
+        self.training_prompt_ = self.prompt_template.format(data=formatted_data)
+        self.heuristic_ = self._call_llm(self.training_prompt_)

@@ -76,3 +76,16 @@ class BasePromptEstimator(BaseEstimator):
         formatted_data = self._format_training_data(X_values, y, self.feature_names_in_, self.target_name_)
         self.training_prompt_ = self.prompt_template.format(data=formatted_data)
         self.heuristic_ = self._call_llm(self.training_prompt_)
+
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        # Remove non-pickleable objects
+        if "llm_client" in state:
+            del state["llm_client"]
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        # Recreate client after unpickling
+        openai.api_key = os.getenv("OPENAI_API_KEY")
+        self.llm_client = openai.OpenAI()

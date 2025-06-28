@@ -14,7 +14,7 @@ Treat the data as a sample of a much larger problem domain, so don't just memori
 
 Look at the name of the target column and figure out its meaning. It the input features seem to be text or text entities, it is OK to output a prompt that will ask the LLM to reason by itself what the target value could be.
 
-Conduct an analysis based on the following data, and output only the final trained classifier (like a decision tree, human-readable instructions, etc) that will be conveyed in the form of an LLM prompt to another system. The rules will be executed as given so you need to have all the weights, equations, thresholds, etc in your output. The classifier should be able to accurately predict the value (class) of the last column based on the data in the other columns. Respond in plain text ascii only.
+Conduct an analysis based on the following data, and output only the final trained classifier (like a decision tree, human-readable instructions, etc) that will be conveyed in the form of an LLM prompt to another system. The rules will be executed as given so you need to have all the weights, equations, thresholds, etc in your output. The classifier should be able to accurately predict the value (class) of the last column based on the data in the other columns.
 
 Data:
 {data}

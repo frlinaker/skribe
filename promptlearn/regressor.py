@@ -1,6 +1,7 @@
 # promptlearn/regressor.py
 
 from typing import Optional, List
+import numpy as np
 import pandas as pd
 from sklearn.base import RegressorMixin
 from sklearn.metrics import mean_squared_error
@@ -10,7 +11,7 @@ from .base import BasePromptEstimator
 DEFAULT_PROMPT_TEMPLATE = """\
 You are a seasoned data scientist. Analyze the following data and output only the final trained regression function (e.g., a linear or nonlinear equation) that best fits the data. The data has one of more features as input and the last column is the target value.
 
-The function must be executable as written — include weights, operations, and any thresholds required to use it as a predictive formula. Your answer should not include explanations, only the final model. Respond in plain text ascii only.
+The function must be executable as written — include weights, operations, and any thresholds required to use it as a predictive formula. Your answer should not include explanations, only the final model.
 
 Data:
 {data}
@@ -30,9 +31,14 @@ class PromptRegressor(BasePromptEstimator, RegressorMixin):
             self.heuristic_ + "\n\n"
             f"Given: {feature_string}\n"
             f"What is the predicted {self.target_name_}?\n"
-            "Respond only with a number (e.g., 4.2)"
+            "Respond only with a single number like 13.2 — no units, no formula, no explanation."
         )
-        return float(self._call_llm(prompt))
+        raw = self._call_llm(prompt)
+        try:
+            return float(raw)
+        except ValueError:
+            print("⚠️ Non-numeric LLM response:\n", raw)
+            return np.nan
 
     def predict(self, X) -> List[float]:
         if isinstance(X, pd.DataFrame):

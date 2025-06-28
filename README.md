@@ -153,6 +153,29 @@ From **parameter optimization** → to **language-native heuristics**
 
 ---
 
+## 📚 Related Work
+
+### 🧩 Scikit-LLM
+
+[Scikit-LLM](https://github.com/BeastByteAI/scikit-llm) is an existing library that provides scikit-learn-compatible wrappers for zero-shot and few-shot text classification using large language models. It supports classifiers like `ZeroShotGPTClassifier` and `FewShotGPTClassifier`, and is designed for lightweight integration of LLMs into NLP pipelines.
+
+**Key Differences from `promptlearn`:**
+
+| Capability                          | Scikit-LLM                          | promptlearn (this package)               |
+|-------------------------------------|-------------------------------------|------------------------------------------|
+| Scikit-learn API                    | ✅ Yes                               | ✅ Yes                                    |
+| Zero-shot classification            | ✅ Yes                               | ✅ Yes                                    |
+| Regression support                  | ❌ No                                | ✅ Yes                                    |
+| Generates freeform prompts (heuristics)  | ❌ No                                | ✅ Yes                                    |
+| Learns from tabular data            | ⚠️ Only stores labels                | ✅ Extracts symbolic pattern              |
+| Generates synthetic examples        | ❌ No                                | ✅ `.sample()` generates valid rows       |
+| Interpretable model output          | ❌ Black-box prompting               | ✅ Human-readable heuristics              |
+
+Where Scikit-LLM focuses on **wrapping LLMs for classification tasks**, `promptlearn` aims to **extract and operate on the logic implied by the data**.  
+In `promptlearn`, training yields a **verbal heuristic** — a compact, interpretable rule that guides prediction and can generate example rows.
+
+---
+
 ## 📁 License
 
 MIT © 2025 Fredrik Linaker

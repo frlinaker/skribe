@@ -30,7 +30,7 @@ class PromptRegressor(BasePromptEstimator, RegressorMixin):
         prompt = (
             self.heuristic_ + "\n\n"
             f"Given: {feature_string}\n"
-            f"What is the predicted {self.target_name_}?\n"
+            f"Answer this question: What is the predicted {self.target_name_}?\n"
             "Respond only with a single number like 13.2 — no units, no formula, no explanation."
         )
         raw = self._call_llm(prompt)

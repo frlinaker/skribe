@@ -163,13 +163,14 @@ From **parameter optimization** → to **language-native heuristics**
 
 | Capability                          | Scikit-LLM                          | promptlearn (this package)               |
 |-------------------------------------|-------------------------------------|------------------------------------------|
-| Self-generates LLM prompts to attack problems  | ❌ No                                | ✅ Yes                                    |
+| Self-generates LLM prompts to fit problem  | ❌ No                                | ✅ Yes                                    |
 | Regression support                  | ❌ No                                | ✅ Yes                                    |
 | Scikit-learn API                    | ✅ Yes                               | ✅ Yes                                    |
 | Zero-shot classification            | ✅ Yes                               | ✅ Yes                                    |
 | Learns from tabular data            | ⚠️ Only stores labels                | ✅ Extracts symbolic pattern              |
 | Generates synthetic examples        | ❌ No                                | ✅ `.sample()` generates valid rows       |
 | Interpretable model output          | ❌ Black-box prompting               | ✅ Human-readable heuristics              |
+| Consistency                         | ❌ Creates decision logic per predict  | ✅ Extracts decision logic once, during fit    |
 
 Where Scikit-LLM focuses on **wrapping LLMs for classification tasks**, `promptlearn` aims to **extract and operate on the logic implied by the data**.  
 In `promptlearn`, training yields a **verbal heuristic** — a compact, interpretable rule that guides prediction and can generate example rows.

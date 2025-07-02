@@ -1,179 +1,150 @@
 # ⚡️ promptlearn
 
-**promptlearn** supercharges your `scikit-learn` pipelines with the cognitive power of large language models.  
-It lets you swap traditional machine learning estimators for LLM-backed alternatives — no retraining, no new APIs, just smarter results.
+**promptlearn** brings large language models into your scikit-learn workflow.  
+It replaces traditional estimators with language-native reasoning systems that learn, adapt, and describe patterns — using natural language as the model substrate.
 
 ---
 
-### 🧠 LLMs as Estimators
+### 🤖 Estimators Powered by Language
 
-`promptlearn` provides plug-and-play, `scikit-learn`-compatible estimators that are powered by prompting rather than parameter tuning:
+`promptlearn` provides scikit-learn-compatible estimators that use LLMs as the modeling engine:
 
-- **`PromptClassifier`** – classifies inputs through intelligent, human-like reasoning  
-- **`PromptRegressor`** – uncovers numeric relationships via freeform pattern discovery
+- **`PromptClassifier`** – for predicting classes through generalized reasoning
+- **`PromptRegressor`** – for modeling numeric relationships in data
 
-These estimators support standard `.fit()`, `.predict()`, and `.score()` methods — just like traditional models — and work seamlessly with the broader `scikit-learn` ecosystem.
-
----
-
-### 🧩 Introducing the *Heuristic*
-
-What `promptlearn` learns is not a numeric model — it's a **heuristic**: a concise, often symbolic or verbal representation of the underlying pattern in your data.
-
-During `fit()`, the LLM analyzes your dataset and produces a heuristic —  
-a human-readable rule, equation, or logic tree like:
-
-> "If the country's flag includes blue — based on common national symbolism — then predict 1, else 0."
-
-Or:
-
-> "If sepal length is less than 5 and petal width is below 0.3, predict 'setosa'."
-
-These heuristics go beyond decision boundaries — they express logic in language.
-They can encode symbolic rules, equations, or even reference real-world knowledge the LLM already knows.
+These estimators follow the same API as other `scikit-learn` models (`fit`, `predict`, `score`) but operate via dynamic prompt construction and few-shot abstraction — not parameter optimization.
 
 ---
 
-### 🔮 Beyond Machine Learning
+### 📘 What it Learns: The Heuristic
 
-Where standard models see data points, LLMs see **meaning**.
+When you call `.fit()`, the LLM reviews your data and writes out an internal heuristic — a compact representation of what it has inferred. This heuristic might describe:
 
-During `fit()`:
-- The LLM interprets tabular data as natural information
-- Infers structure, causality, and latent world knowledge
-- Synthesizes a **heuristic**, not just parameters
+- A relationship between age, hours worked, and income
+- How education, gender, and occupation relate to survival rates
+- Why one row differs from another
 
-During `predict()`:
-- The heuristic is applied to new inputs via prompt composition
-- The LLM responds with precise predictions based on learned logic
-
-This allows for models that articulate:
-
-> the target is an XOR of x1 and x2  
-> y ≈ 2·x + 3 explains this noisy relationship  
-> a human-readable decision tree like this [...] works well
+The result is a plain-text model — readable, portable, and expressive. This is stored in `.heuristic_`, and it’s used to power all predictions.
 
 ---
 
-### 🌍 Embedded World Knowledge
+### 🧠 Language-Aware Reasoning
 
-LLMs bring something traditional models can't: **knowledge from the outside world**.
+Because the models are backed by LLMs, they can reason across both structure and semantics:
 
-For example:
+- Names of columns matter
+- Missing data can be explained or inferred
+- World knowledge is available by default
+
+A trained model might use context like:
+
+> “Bachelors” typically correlates with medium income  
+> “Private” workclass often means lower capital gain  
+> Rows with missing `native-country` likely default to “United States”
+
+This allows reasoning across incomplete, skewed, or lightly structured data — without hand-tuning features.
+
+---
+
+### 🧬 Background Knowledge Included
+
+The LLM brings its internal knowledge graph to the modeling task. For instance:
 
 ```
-Input: country_name = "Sweden"
+Input: country = "Norway"
 Output: has_blue_in_flag = 1
 ```
 
-This is not feature extraction — it’s *reasoning*.  
-LLM-based estimators can draw from their embedded world model to make informed predictions, even when key features are missing.  
-Think of it as a **web-scale join**, performed automatically at inference time.
+Even if there is a complete lack of information in the provided data, the model may still predict correctly by referencing its background information.
+
+This creates a kind of ambient “web join” during training and inference — where external facts are considered part of the input.
 
 ---
 
-### 🕳 Zero-Row Learning
+### 🕳 Zero-Example Learning
 
-**promptlearn can learn from just the column names.**
+If you call `.fit()` with no rows — just column names — `promptlearn` will still return a working model.
 
-When you provide only input and target headers — no rows — the LLM will infer a plausible model from background knowledge.
+This is possible because the LLM can hallucinate a plausible mapping based on:
+
+- Column names
+- Prior knowledge
+- Type hints or value patterns
+
+This makes rapid prototyping and conceptual modeling trivial. You can build a classifier in seconds based on names alone.
+
+---
+
+### 🧠 Scaling with Chunked Training
+
+To support large datasets, `promptlearn` uses a sliding window training mechanism.
+
+During `.fit()`:
+- The dataset is processed in batches (“chunks”)
+- The current heuristic is passed forward like a scratchpad
+- Each chunk contributes feedback and refinement
+- The model evolves with each window
+
+This allows training on limitless rows with a fixed memory budget. You can control chunk size, number of passes, and scratchpad visibility.
+
+The process is fully transparent — if the dataset is large, `fit()` will automatically enable chunked training.
+
+---
+
+### 🧪 Native `.sample()` Support
+
+You can generate synthetic rows directly from any trained model using `.sample(n)`.
+
+This is useful for:
+
+- Understanding what the model believes
+- Creating test sets or bootstrapped data
+- Building readable examples from internal logic
 
 Example:
 
 ```
-Input columns: ['country_name']  
-Target column: 'has_blue_in_flag'  
-Training rows: 0  
-Result: a working classifier.
-```
-
-See: [examples/zero_row_classifier.py](examples/zero_row_classifier.py)
-
-This is fundamentally impossible in traditional ML — but not for a language model.
-
----
-
-### 🧪 Self-Descriptive Models with `.sample()`
-
-`promptlearn` estimators aren’t black boxes — they can speak for themselves.  
-Using `.sample()`, you can extract representative example rows from the heuristic itself, making the model behavior interpretable and reproducible.
-
-Call `.sample(n)` on any trained estimator to generate synthetic rows that conform to its learned heuristic:
-
-```python
 >>> model.sample(3)
+fruit    is_citrus
+Lime     1
+Banana   0
+Orange   1
 ```
-
-Example output:
-
-```
-fruit_name    is_citrus
-Lemon         1
-Apple         0
-Grapefruit    1
-```
-
-This is a live demonstration of the model’s internal reasoning, surfaced as readable examples.  
-It’s useful for:
-- Quick inspection of what the model believes
-- Creating test cases or bootstrapped data
-- Interactive documentation of behavior
-
-> Think of it as “What would this model say a good input/output pair looks like?”
 
 ---
 
-### 💾 Model Persistence (now with `joblib` support!)
+### 💾 Save and Reload with `joblib`
 
-Trained estimators (i.e., heuristics) can be saved and loaded with `joblib`:
+Like any scikit-learn model, `promptlearn` estimators can be serialized:
 
 ```python
 import joblib
 
-# Save
-joblib.dump(classifier, "model.joblib")
-
-# Load
-classifier = joblib.load("model.joblib")
-classifier.predict(...)
+joblib.dump(model, "model.joblib")
+model = joblib.load("model.joblib")
 ```
 
-The internal LLM client is safely excluded from the saved state and re-initialized on load.  
-You can also inspect `.heuristic_` directly — it’s fully human-readable and portable.
-
----
-
-## 🔗 Why it matters
-
-`promptlearn` isn’t just a drop-in tool. It’s a paradigm shift:
-
-From **pattern matching** → to **knowledge-aware reasoning**  
-From **training on labeled data** → to **prompting from context**  
-From **parameter optimization** → to **language-native heuristics**
+The LLM client is excluded from the saved file and re-initialized on load. The heuristic remains intact, interpretable, and ready to use.
 
 ---
 
 ## 📚 Related Work
 
-### 🧩 Scikit-LLM
+### Scikit-LLM
 
-[Scikit-LLM](https://github.com/BeastByteAI/scikit-llm) is an existing library that provides scikit-learn-compatible wrappers for zero-shot and few-shot text classification using large language models. It supports classifiers like `ZeroShotGPTClassifier` and `FewShotGPTClassifier`, and is designed for lightweight integration of LLMs into NLP pipelines. Prompts are made with pre-defined templates and only the sampling of data to be included during predictions is done by the package during the fitting stage.
+[Scikit-LLM](https://github.com/BeastByteAI/scikit-llm) provides zero- and few-shot classification through template-based prompting.  
+It is lightweight and NLP-focused.
 
-**Key Differences from `promptlearn`:**
+**promptlearn** offers a broader modeling philosophy:
 
-| Capability                          | Scikit-LLM                          | promptlearn (this package)               |
-|-------------------------------------|-------------------------------------|------------------------------------------|
-| Self-generates LLM prompts to fit problem  | ❌ No                                | ✅ Yes                                    |
-| Regression support                  | ❌ No                                | ✅ Yes                                    |
-| Scikit-learn API                    | ✅ Yes                               | ✅ Yes                                    |
-| Zero-shot classification            | ✅ Yes                               | ✅ Yes                                    |
-| Learns from tabular data            | ⚠️ Only stores labels                | ✅ Extracts symbolic pattern              |
-| Generates synthetic examples        | ❌ No                                | ✅ `.sample()` generates valid rows       |
-| Interpretable model output          | ❌ Black-box prompting               | ✅ Human-readable heuristics              |
-| Consistency                         | ❌ Creates decision logic per predict  | ✅ Extracts decision logic once, during fit    |
-
-Where Scikit-LLM focuses on **wrapping LLMs for classification tasks**, `promptlearn` aims to **extract and operate on the logic implied by the data**.  
-In `promptlearn`, training yields a **verbal heuristic** — a compact, interpretable rule that guides prediction and can generate example rows.
+| Capability                  | Scikit-LLM         | promptlearn                |
+|-----------------------------|--------------------|----------------------------|
+| Prompt generated during fit | ❌ No               | ✅ Yes                     |
+| Regression support          | ❌ No               | ✅ Yes                     |
+| Uses LLM background knowledge | ❌ No             | ✅ Yes                     |
+| Produces textual heuristics | ❌ No               | ✅ Yes                     |
+| Works on tabular data       | ✅ Partial          | ✅ Full                    |
+| Generates sample rows       | ❌ No               | ✅ `.sample()`             |
 
 ---
 

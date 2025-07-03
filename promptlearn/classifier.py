@@ -18,6 +18,8 @@ Conduct an analysis based on the following data, and output only the final train
 
 If you find that a single rule is too broad, break it down into more specific cases to reduce false positives and false negatives.
 
+Note that if you can predict the target value using your own logic or built-in knowledge, output a text prompt that will direct the prediction LLM to do so.
+
 Data:
 {data}
 """
@@ -54,6 +56,7 @@ class PromptClassifier(BasePromptEstimator, ClassifierMixin):
                 print(f"🌀 Switching to chunked fit: {len(X)} rows > threshold {self.chunk_threshold}")
             return self.fit_chunked(X, y, max_chunks=self.max_chunks)
         self._fit_common(X, y)
+        print(f"🧠 Final heuristic:\n{self.heuristic_}")
         return self
 
     def fit_chunked(self, X, y, chunk_size: int = 100, max_chunks: Optional[int] = None) -> "PromptClassifier":

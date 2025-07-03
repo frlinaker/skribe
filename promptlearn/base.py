@@ -54,7 +54,7 @@ class BasePromptEstimator(BaseEstimator):
 
     def _call_llm(self, prompt: str) -> str:
         if self.verbose:
-            logging.info(f"LLM prompt:\n{prompt}")
+            logging.debug(f"LLM prompt:\n{prompt}")
         try:
             response = self.llm_client.chat.completions.create(
                 model=self.model,

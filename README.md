@@ -141,7 +141,6 @@ It is lightweight and NLP-focused.
 |-----------------------------|--------------------|----------------------------|
 | Prompt generated during fit | ❌ No               | ✅ Yes                     |
 | Regression support          | ❌ No               | ✅ Yes                     |
-| Uses LLM background knowledge | ❌ No             | ✅ Yes                     |
 | Produces textual heuristics | ❌ No               | ✅ Yes                     |
 | Works on tabular data       | ✅ Partial          | ✅ Full                    |
 | Generates sample rows       | ❌ No               | ✅ `.sample()`             |

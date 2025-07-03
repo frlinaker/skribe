@@ -1,9 +1,11 @@
 from typing import Optional, List
+import re
 import pandas as pd
 from sklearn.base import ClassifierMixin
 from sklearn.metrics import accuracy_score
 from sklearn.utils.validation import check_array
 from .base import BasePromptEstimator
+from tqdm import tqdm
 
 DEFAULT_PROMPT_TEMPLATE = """\\
 You are a seasoned data scientist tasked with building a classification prompt for an LLM.
@@ -68,7 +70,7 @@ class PromptClassifier(BasePromptEstimator, ClassifierMixin):
 
         scratchpad = ""
 
-        for i in range(num_chunks):
+        for i in tqdm(range(num_chunks), desc="🧠 Chunked training"):
             chunk = df.iloc[i * chunk_size : (i + 1) * chunk_size]
             chunk_csv = chunk.to_csv(index=False)
 
@@ -92,6 +94,7 @@ Respond only with the full classifier description in plain text. The classifier 
             if self.verbose:
                 print(f"🧠 Updated heuristic after chunk {i + 1}:\n{scratchpad}\n")
 
+        print(f"🧠 Final heuristic:\n{scratchpad}")
         self.heuristic_ = scratchpad
         return self
 
@@ -103,14 +106,26 @@ Respond only with the full classifier description in plain text. The classifier 
             f"What is the predicted {self.target_name_}?\n"
             f"{self._instruction_suffix()}"
         )
-        return int(self._call_llm(prompt))
+        response = self._call_llm(prompt).strip()
+
+        # Try parsing directly
+        try:
+            return int(response)
+        except ValueError:
+            # Try regex extraction
+            match = re.search(r"\b(\d+)\b", response)
+            if match:
+                return int(match.group(1))
+
+        # If both fail, raise a clear error
+        raise ValueError(f"⚠️ Could not parse numeric prediction from LLM response: {response}")
 
     def predict(self, X) -> List[int]:
         if isinstance(X, pd.DataFrame):
-            return [self._predict_one(row) for _, row in X.iterrows()]
+            return [self._predict_one(row) for _, row in tqdm(X.iterrows(), total=len(X), desc="🔮 Predicting")]
         else:
             X_checked = check_array(X)
-            return [self._predict_one(x) for x in X_checked]
+            return [self._predict_one(x) for x in tqdm(X_checked, desc="🔮 Predicting")]
 
     def score(self, X, y, sample_weight=None) -> float:
         y_pred = self.predict(X)

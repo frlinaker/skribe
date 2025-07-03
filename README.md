@@ -5,6 +5,26 @@ It replaces traditional estimators with language-native reasoning systems that l
 
 ---
 
+### 📊 Outperforming Traditional Models with Built-In Knowledge
+
+Because it can inject knowledge into the model — not just extract it from data — `promptlearn` has been shown to outperform classical models like decision trees, random forests, and even logistic regression on tasks where semantics, background facts, or real-world generalization matter.
+
+Consider a benchmark of predicting whether an [animal is a mammal](examples/benchmark_runner.py), given its name, weight, and lifespan. While there are numerical attributes here for traditional ML models to latch onto, `promptlearn` can use its background knowledge to make the right predictions:
+
+| Model               | Accuracy |
+|---------------------|----------|
+| `promptlearn-o4-mini` | **1.00** ✅ |
+| `promptlearn-gpt-4o`  | 0.97     |
+| `logistic_regression`| 0.60     |
+| `random_forest`      | 0.46     |
+| `dummy`              | 0.34     |
+
+Only LLM-based models understood that a `"Whale"` is a mammal and a `"Shark"` is not — despite never seeing those labels in training.
+
+This kind of reasoning cannot be learned purely from numerical patterns. It requires **semantic generalization** — and LLMs bring that to every model.
+
+---
+
 ### 🤖 Estimators Powered by Language
 
 `promptlearn` provides scikit-learn-compatible estimators that use LLMs as the modeling engine:

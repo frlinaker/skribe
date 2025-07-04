@@ -1,19 +1,3 @@
 [build-system]
 requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
-
-[project]
-name = "promptlearn"
-version = "0.1.0"
-description = "LLM-based estimators (PromptClassifier, PromptRegressor)"
-license = {text = "MIT"}
-authors = [
-  {name = "Fredrik Linaker", email = "fredrik.linaker@gmail.com"}
-]
-requires-python = ">=3.8"
-dependencies = [
-  "scikit-learn",
-  "openai",
-  "pandas",
-  "joblib"
-]

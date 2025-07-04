@@ -1,4 +1,6 @@
 openai
 scikit-learn
 pandas
+numpy
 joblib
+tqdm

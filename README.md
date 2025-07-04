@@ -1,27 +1,51 @@
+
 # ⚡️ promptlearn
 
 **promptlearn** brings large language models into your scikit-learn workflow.  
-It replaces traditional estimators with language-native reasoning systems that learn, adapt, and describe patterns — using natural language as the model substrate.
+It replaces traditional estimators with language-native reasoning systems that learn, adapt, and describe patterns using natural language as the model substrate.
 
 ---
 
 ### 📊 Outperforming Traditional Models with Built-In Knowledge
 
-Because it can inject knowledge into the model — not just extract it from data — `promptlearn` has been shown to outperform classical models like decision trees, random forests, and even logistic regression on tasks where semantics, background facts, or real-world generalization matter.
+`promptlearn` allows LLMs to internalize both structure and semantics during training. As a result, the models often exceed the capabilities of classical estimators when the task requires reasoning, real-world knowledge, or symbolic understanding.
 
-Consider a benchmark of predicting whether an [animal is a mammal](examples/benchmark_runner.py), given its name, weight, and lifespan. While there are numerical attributes here for traditional ML models to latch onto, `promptlearn` can use its background knowledge to make the right predictions:
+Consider a simple binary classification task: predicting whether an [animal is a mammal](examples/data/mammal_train.csv) based on its name, weight, and lifespan.
 
-| Model               | Accuracy |
-|---------------------|----------|
-| `promptlearn-o4-mini` | **1.00** ✅ |
+Traditional models depend solely on the input features. But `promptlearn` models can use their internal understanding of zoology to form highly accurate rules. Even when a label like `"Whale"` is never seen during training, the model knows it belongs to the mammal class.
+
+| Model                 | Accuracy |
+|-----------------------|----------|
+| `promptlearn-o4-mini` | **1.00** |
 | `promptlearn-gpt-4o`  | 0.97     |
 | `logistic_regression`| 0.60     |
-| `random_forest`      | 0.46     |
-| `dummy`              | 0.34     |
+| `random_forest`       | 0.46     |
+| `dummy`               | 0.34     |
 
-Only LLM-based models understood that a `"Whale"` is a mammal and a `"Shark"` is not — despite never seeing those labels in training.
+This type of semantic generalization is a powerful advantage for LLM-backed models.
 
-This kind of reasoning cannot be learned purely from numerical patterns. It requires **semantic generalization** — and LLMs bring that to every model.
+---
+
+Now compare performance on a regression task where the data contains samples of objects falling from different heights, under different gravity. This is a classic physics problem, with a well-known equation:
+
+```
+fall_time_s = sqrt((2 * height_m) / gravity_mps2)
+```
+
+Recent `promptlearn` estimators are able to recover this exact formula and use it to generate near-perfect predictions:
+
+| Model                  | MSE       |
+|------------------------|-----------|
+| `promptlearn-o4-mini`  | **0.00006** |
+| `promptlearn-gpt-4o`   | 0.00006   |
+| `gradient_boosting`    | 0.035     |
+| `linear_regression`    | 0.498     |
+| `dummy`                | 5.27      |
+| `promptlearn-gpt-4`    | 43.17     |
+
+No feature engineering was performed. No physics constants were added. The model discovered the rule and applied it directly. Classical regressors, by contrast, approximated a curve but missed the exact structure.
+
+These results highlight the practical benefit of reasoning models: they learn compact, expressive heuristics and can outperform traditional systems when symbolic insight or background knowledge is essential.
 
 ---
 
@@ -32,7 +56,7 @@ This kind of reasoning cannot be learned purely from numerical patterns. It requ
 - **`PromptClassifier`** – for predicting classes through generalized reasoning
 - **`PromptRegressor`** – for modeling numeric relationships in data
 
-These estimators follow the same API as other `scikit-learn` models (`fit`, `predict`, `score`) but operate via dynamic prompt construction and few-shot abstraction — not parameter optimization.
+These estimators follow the same API as other `scikit-learn` models (`fit`, `predict`, `score`) but operate via dynamic prompt construction and few-shot abstraction.
 
 ---
 
@@ -44,7 +68,7 @@ When you call `.fit()`, the LLM reviews your data and writes out an internal heu
 - How education, gender, and occupation relate to survival rates
 - Why one row differs from another
 
-The result is a plain-text model — readable, portable, and expressive. This is stored in `.heuristic_`, and it’s used to power all predictions.
+The result is a plain-text model. It is readable, portable, and expressive. This is stored in `.heuristic_`, and it powers all predictions.
 
 ---
 
@@ -62,7 +86,7 @@ A trained model might use context like:
 > “Private” workclass often means lower capital gain  
 > Rows with missing `native-country` likely default to “United States”
 
-This allows reasoning across incomplete, skewed, or lightly structured data — without hand-tuning features.
+This allows reasoning across incomplete, skewed, or lightly structured data without hand-tuning features.
 
 ---
 
@@ -75,9 +99,7 @@ Input: country = "Norway"
 Output: has_blue_in_flag = 1
 ```
 
-Even if there is a complete lack of information in the provided data, the model may still predict correctly by referencing its background information.
-
-This creates a kind of ambient “web join” during training and inference — where external facts are considered part of the input.
+Even if there is no signal in the data, the model may still predict correctly by referencing background information. This creates a kind of ambient “web join” during training and inference.
 
 ---
 
@@ -91,7 +113,7 @@ This is possible because the LLM can hallucinate a plausible mapping based on:
 - Prior knowledge
 - Type hints or value patterns
 
-This makes rapid prototyping and conceptual modeling trivial. You can build a classifier in seconds based on names alone.
+This makes rapid prototyping and conceptual modeling trivial.
 
 ---
 
@@ -105,23 +127,13 @@ During `.fit()`:
 - Each chunk contributes feedback and refinement
 - The model evolves with each window
 
-This allows training on limitless rows with a fixed memory budget. You can control chunk size, number of passes, and scratchpad visibility.
-
-The process is fully transparent — if the dataset is large, `fit()` will automatically enable chunked training.
+This allows training on limitless rows using a fixed memory budget. The process is transparent. If the dataset is large, chunked training activates automatically.
 
 ---
 
 ### 🧪 Native `.sample()` Support
 
-You can generate synthetic rows directly from any trained model using `.sample(n)`.
-
-This is useful for:
-
-- Understanding what the model believes
-- Creating test sets or bootstrapped data
-- Building readable examples from internal logic
-
-Example:
+You can generate synthetic rows directly from any trained model using `.sample(n)`:
 
 ```
 >>> model.sample(3)
@@ -130,6 +142,12 @@ Lime     1
 Banana   0
 Orange   1
 ```
+
+This is useful for:
+
+- Understanding what the model believes
+- Creating test sets or bootstrapped data
+- Building readable examples from internal logic
 
 ---
 

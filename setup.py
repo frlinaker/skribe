@@ -29,7 +29,6 @@ setup(
     classifiers=[
         "License :: OSI Approved :: MIT License",
         "Programming Language :: Python :: 3",
-        "Framework :: Scikit-Learn",
         "Intended Audience :: Developers",
         "Topic :: Scientific/Engineering :: Artificial Intelligence"
     ]

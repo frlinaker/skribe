@@ -82,7 +82,6 @@ class BasePromptEstimator(BaseEstimator):
 
     def __getstate__(self):
         state = self.__dict__.copy()
-        # Remove non-pickleable objects
         if "llm_client" in state:
             del state["llm_client"]
         return state
@@ -100,6 +99,9 @@ class BasePromptEstimator(BaseEstimator):
 
         openai.api_key = api_key
         self.llm_client = openai.OpenAI()
+
+    def __reduce__(self):
+        return (type(self), (self.model, self.prompt_template, self.verbose), self.__getstate__())
 
     def _parse_tsv(self, tsv: str) -> pd.DataFrame:
         """Parse tab-separated values (TSV) into a pandas DataFrame."""

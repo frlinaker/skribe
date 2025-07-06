@@ -1,5 +1,7 @@
 from typing import Optional, List
+import os
 import re
+import joblib
 import pandas as pd
 from sklearn.base import ClassifierMixin
 from sklearn.metrics import accuracy_score
@@ -7,12 +9,12 @@ from sklearn.utils.validation import check_array
 from .base import BasePromptEstimator
 from tqdm import tqdm
 
-DEFAULT_PROMPT_TEMPLATE = """\\
+DEFAULT_PROMPT_TEMPLATE = """\
 You are a seasoned data scientist tasked with building a classification prompt for an LLM.
 
 Treat the data as a sample of a much larger problem domain, so don't just memorize the data as-is. Try to minimize prediction error, not just describe dominant patterns. Include exceptions and counterexamples in your logic.
 
-Look at the name of the target column and figure out its meaning. It the input features seem to be text or text entities, it is OK to output a prompt that will ask the LLM to reason by itself what the target value could be, but it should always result in an integer value (if it's a boolean then True=1 and False=0).
+Look at the name of the target column and figure out its meaning. If the input features seem to be text or text entities, it is OK to output a prompt that will ask the LLM to reason by itself what the target value could be, but it should always result in an integer value (if it's a boolean then True=1 and False=0).
 
 Conduct an analysis based on the following data, and output only the final trained classifier (like a decision tree, human-readable instructions, etc) that will be conveyed in the form of an LLM prompt to another system. The rules will be executed as given so you need to have all the weights, equations, thresholds, etc in your output. The classifier should be able to accurately predict the value (class) of the last column based on the data in the other columns.
 
@@ -20,18 +22,27 @@ If you find that a single rule is too broad, break it down into more specific ca
 
 Note that if you can predict the target value using your own logic or built-in knowledge, output a text prompt that will direct the prediction LLM to do so.
 
+{scratchpad}
 Data:
 {data}
 """
 
 class PromptClassifier(BasePromptEstimator, ClassifierMixin):
-    def __init__(self, model: str = "o4-mini", prompt_template: Optional[str] = None,
-                 verbose: bool = False, chunk_threshold: int = 300,
-                 force_chunking: bool = False, max_chunks: Optional[int] = None):
+    def __init__(
+        self,
+        model: str = "o4-mini",
+        prompt_template: Optional[str] = None,
+        verbose: bool = False,
+        chunk_threshold: int = 300,
+        force_chunking: bool = False,
+        max_chunks: Optional[int] = None,
+        save_dir: Optional[str] = None
+    ):
         super().__init__(model, prompt_template or DEFAULT_PROMPT_TEMPLATE, verbose)
         self.chunk_threshold = chunk_threshold
         self.force_chunking = force_chunking
         self.max_chunks = max_chunks
+        self.save_dir = save_dir
         self.heuristic_history_: List[str] = []
 
     def _normalize_target_values(self, y):
@@ -59,7 +70,13 @@ class PromptClassifier(BasePromptEstimator, ClassifierMixin):
         print(f"🧠 Final heuristic:\n{self.heuristic_}")
         return self
 
-    def fit_chunked(self, X, y, chunk_size: int = 100, max_chunks: Optional[int] = None) -> "PromptClassifier":
+    def fit_chunked(
+        self,
+        X,
+        y,
+        chunk_size: int = 100,
+        max_chunks: Optional[int] = None
+    ) -> "PromptClassifier":
         if not isinstance(X, pd.DataFrame):
             raise ValueError("fit_chunked requires a pandas DataFrame for X")
 
@@ -71,34 +88,30 @@ class PromptClassifier(BasePromptEstimator, ClassifierMixin):
         if max_chunks:
             num_chunks = min(num_chunks, max_chunks)
 
-        scratchpad = ""
+        if self.save_dir:
+            os.makedirs(self.save_dir, exist_ok=True)
+
+        self.heuristic_ = ""
 
         for i in tqdm(range(num_chunks), desc="🧠 Chunked training"):
             chunk = df.iloc[i * chunk_size : (i + 1) * chunk_size]
             chunk_csv = chunk.to_csv(index=False)
 
-            prompt = f"""You are analyzing a large dataset in sequential windows.
+            prompt = self.prompt_template.format(data=chunk_csv, scratchpad=self.heuristic_)
 
-This is the current window (rows {i * chunk_size} to {(i + 1) * chunk_size - 1}):
+            self.heuristic_ = self._call_llm(prompt)
+            self.heuristic_history_.append(self.heuristic_)
 
-{chunk_csv}
+            if self.save_dir:
+                filename = os.path.join(self.save_dir, f"heuristic_chunk_{i+1:02d}.joblib")
+                joblib.dump(self, filename)
+                if self.verbose:
+                    print(f"💾 Saved heuristic to {filename}")
 
-Your current scratchpad (classifier-in-progress):
-
-{scratchpad}
-
-Update the classifier description based on this window. Use rules, thresholds, decision structures, or conditions.
-Do not output predictions for this window. Instead, revise the general classifier logic.
-Respond only with the full classifier description in plain text. The classifier should always output an integer value for each possible path (no string returns).
-"""
-
-            scratchpad = self._call_llm(prompt)
-            self.heuristic_history_.append(scratchpad)
             if self.verbose:
-                print(f"🧠 Updated heuristic after chunk {i + 1}:\n{scratchpad}\n")
+                print(f"🧠 Updated heuristic after chunk {i + 1}:\n{self.heuristic_}\n")
 
-        print(f"🧠 Final heuristic:\n{scratchpad}")
-        self.heuristic_ = scratchpad
+        print(f"🧠 Final heuristic:\n{self.heuristic_}")
         return self
 
     def _predict_one(self, x) -> int:
@@ -111,16 +124,13 @@ Respond only with the full classifier description in plain text. The classifier 
         )
         response = self._call_llm(prompt).strip()
 
-        # Try parsing directly
         try:
             return int(response)
         except ValueError:
-            # Try regex extraction
             match = re.search(r"\b(\d+)\b", response)
             if match:
                 return int(match.group(1))
 
-        # If both fail, raise a clear error
         raise ValueError(f"⚠️ Could not parse numeric prediction from LLM response: {response}")
 
     def predict(self, X) -> List[int]:
@@ -137,6 +147,6 @@ Respond only with the full classifier description in plain text. The classifier 
     def show_heuristic_evolution(self):
         print("🧠 Heuristic Evolution:\n")
         for i, h in enumerate(self.heuristic_history_):
-            print(f"--- After chunk {i+1} ---")
+            print(f"--- After chunk {i + 1} ---")
             print(h.strip())
             print()

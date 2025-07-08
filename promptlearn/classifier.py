@@ -35,13 +35,15 @@ class PromptClassifier(BasePromptEstimator, ClassifierMixin):
         verbose: bool = False,
         chunk_threshold: int = 300,
         force_chunking: bool = False,
+        chunk_size: Optional[int] = None,
         max_chunks: Optional[int] = None,
         save_dir: Optional[str] = None
     ):
         super().__init__(model, prompt_template or DEFAULT_PROMPT_TEMPLATE, verbose)
         self.chunk_threshold = chunk_threshold
         self.force_chunking = force_chunking
-        self.max_chunks = max_chunks
+        self.chunk_size = chunk_size or 100
+        self.max_chunks = max_chunks  # None = unlimited, processes full dataset
         self.save_dir = save_dir
         self.heuristic_history_: List[str] = []
 
@@ -65,7 +67,7 @@ class PromptClassifier(BasePromptEstimator, ClassifierMixin):
         if self.force_chunking or (isinstance(X, pd.DataFrame) and len(X) > self.chunk_threshold):
             if self.verbose:
                 print(f"🌀 Switching to chunked fit: {len(X)} rows > threshold {self.chunk_threshold}")
-            return self.fit_chunked(X, y, max_chunks=self.max_chunks)
+            return self.fit_chunked(X, y)
         self._fit_common(X, y)
         print(f"🧠 Final heuristic:\n{self.heuristic_}")
         return self
@@ -73,9 +75,7 @@ class PromptClassifier(BasePromptEstimator, ClassifierMixin):
     def fit_chunked(
         self,
         X,
-        y,
-        chunk_size: int = 100,
-        max_chunks: Optional[int] = None
+        y
     ) -> "PromptClassifier":
         if not isinstance(X, pd.DataFrame):
             raise ValueError("fit_chunked requires a pandas DataFrame for X")
@@ -84,9 +84,9 @@ class PromptClassifier(BasePromptEstimator, ClassifierMixin):
         df[self.target_name_] = y.values if hasattr(y, "values") else y
 
         total_rows = len(df)
-        num_chunks = (total_rows - 1) // chunk_size + 1
-        if max_chunks:
-            num_chunks = min(num_chunks, max_chunks)
+        num_chunks = (total_rows - 1) // self.chunk_size + 1
+        if self.max_chunks:
+            num_chunks = min(num_chunks, self.max_chunks)
 
         if self.save_dir:
             os.makedirs(self.save_dir, exist_ok=True)
@@ -94,7 +94,7 @@ class PromptClassifier(BasePromptEstimator, ClassifierMixin):
         self.heuristic_ = ""
 
         for i in tqdm(range(num_chunks), desc="🧠 Chunked training"):
-            chunk = df.iloc[i * chunk_size : (i + 1) * chunk_size]
+            chunk = df.iloc[i * self.chunk_size : (i + 1) * self.chunk_size]
             chunk_csv = chunk.to_csv(index=False)
 
             prompt = self.prompt_template.format(data=chunk_csv, scratchpad=self.heuristic_)

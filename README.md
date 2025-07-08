@@ -1,5 +1,13 @@
 
-# ⚡️ promptlearn
+# promptlearn
+
+[![GitHub last commit](https://img.shields.io/github/last-commit/frlinaker/promptlearn)](https://github.com/frlinaker/promptlearn)
+[![PyPI - Version](https://img.shields.io/pypi/v/promptlearn)](https://pypi.org/project/promptlearn/)
+![PyPI - Python Version](https://img.shields.io/pypi/pyversions/promptlearn)
+![PyPI - Wheel](https://img.shields.io/pypi/wheel/promptlearn)
+![PyPI - Implementation](https://img.shields.io/pypi/implementation/promptlearn)
+[![Licence](https://img.shields.io/github/license/frlinaker/promptlearn
+)](https://mit-license.org/)
 
 **promptlearn** brings large language models into your scikit-learn workflow.  
 It replaces traditional estimators with language-native reasoning systems that learn, adapt, and describe patterns using natural language as the model substrate.

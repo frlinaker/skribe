@@ -77,7 +77,7 @@ class BasePromptEstimator(BaseEstimator):
         X_values = X.values if isinstance(X, pd.DataFrame) else X
 
         formatted_data = self._format_training_data(X_values, y, self.feature_names_in_, self.target_name_)
-        self.training_prompt_ = self.prompt_template.format(data=formatted_data)
+        self.training_prompt_ = self.prompt_template.format(data=formatted_data, scratchpad="")
         self.heuristic_ = self._call_llm(self.training_prompt_)
 
     def __getstate__(self):

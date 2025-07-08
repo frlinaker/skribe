@@ -1,84 +1,104 @@
-import os
-import openai
 import logging
-from typing import List, Union
-from io import StringIO
-import numpy as np
-import pandas as pd
+import os
 import warnings
+import joblib
+from typing import Any, Dict, Optional
+import re
 
-from sklearn.base import BaseEstimator
-from sklearn.utils.validation import check_X_y
+import openai
 
+logger = logging.getLogger("promptlearn")
 
-class BasePromptEstimator(BaseEstimator):
-    model: str
-    prompt_template: str
-    verbose: bool
-    feature_names_in_: List[str]
-    heuristic_: str
-    target_name_: str
-
+class BasePromptEstimator:
     def __init__(self, model: str, prompt_template: str, verbose: bool = False):
         self.model = model
         self.prompt_template = prompt_template
         self.verbose = verbose
+        self.heuristic_ = None
+        self.heuristic_history_ = []
+        self.aux_data_ = {}
 
-        openai.api_key = os.getenv("OPENAI_API_KEY")
-        self.llm_client = openai.OpenAI()
+        self._init_llm_client()
 
-    def _get_feature_names(self, X: Union[np.ndarray, pd.DataFrame]) -> List[str]:
-        return X.columns.tolist() if isinstance(X, pd.DataFrame) else [f"x{i+1}" for i in range(X.shape[1])]
+    def _init_llm_client(self):
+        try:
+            api_key = os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                raise ValueError("OPENAI_API_KEY not set")
+            openai.api_key = api_key
+            self.llm_client = openai.OpenAI()
+        except ImportError:
+            warnings.warn("openai package is not installed; llm_client not initialized", RuntimeWarning)
+            self.llm_client = None
+        except Exception as e:
+            warnings.warn(f"Failed to initialize llm_client: {e}", RuntimeWarning)
+            self.llm_client = None
 
-    def _get_target_name(self, y: Union[np.ndarray, pd.Series]) -> str:
-        return str(y.name) if isinstance(y, pd.Series) and y.name else "target"
+    def save_clean(self, path: str):
+        if hasattr(self, "llm_client"):
+            del self.llm_client
+        joblib.dump(self, path)
+        if self.verbose:
+            logger.info(f"Saved clean model to {path}")
 
-    def _format_training_data(self, X: np.ndarray, y: Union[np.ndarray, List], feature_names: List[str], target_name: str) -> str:
-        rows = ["\t".join(feature_names + [target_name])]
-        for xi, yi in zip(X, y):
-            row = list(map(str, xi)) + [str(yi)]
-            rows.append("\t".join(row))
-        return "\n".join(rows)
-
-    def _format_features(self, x: Union[np.ndarray, pd.Series]) -> str:
-        if isinstance(x, pd.Series):
-            return ", ".join(
-                f"{k}={v:.3f}" if isinstance(v, (int, float)) else f"{k}='{v}'"
-                for k, v in x.items()
-            )
-        else:
-            return ", ".join(
-                f"{name}={value:.3f}" if isinstance(value, (int, float)) else f"{name}='{value}'"
-                for name, value in zip(self.feature_names_in_, x)
-            )
+    def safe_format(self, template, **kwargs):
+        from collections import defaultdict
+        class SafeDict(defaultdict):
+            def __missing__(self, key):
+                return ""
+        return template.format_map(SafeDict(str, kwargs))
 
     def _call_llm(self, prompt: str) -> str:
+        if self.llm_client is None:
+            raise RuntimeError("llm_client not initialized or OPENAI_API_KEY not set.")
+
         if self.verbose:
-            logging.debug(f"LLM prompt:\n{prompt}")
+            logger.info(f"[LLM Prompt]\n{prompt}")
+
+        response = self.llm_client.chat.completions.create(
+            model=self.model,
+            messages=[{"role": "system", "content": prompt}]
+        )
+        # For OpenAI v1, choices is a list, and code is .message.content
+        code = response.choices[0].message.content.strip()
+
+        if self.verbose:
+            logger.info(f"[LLM Output]\n{code}")
+
+        return code
+
+    def _make_predict_fn(self, code: str, aux_data: dict = None):
+        aux_data = aux_data or {}
+        local_env = {}
+        # Remove markdown/code-fence wrappers if present
+        code = code.strip()
+        # Strip code block markers if present
+        if code.startswith("```"):
+            code = re.sub(r"^```(python)?", "", code)
+            code = code.rstrip("`").rstrip()
+        code = re.sub(r"^python\s+", "", code, flags=re.MULTILINE)
+        if not code:
+            logger.error("LLM output is empty after removing markdown/code block.")
+            raise ValueError("No code to exec from LLM output.")
+
         try:
-            response = self.llm_client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}]
-            )
-            result = (response.choices[0].message.content or "").strip()
-
-            if self.verbose:
-                logging.info(f"LLM result: {result}")
-            return result
+            # PATCH: Use same dict for globals/locals so all definitions share scope!
+            exec(code, local_env, local_env)
+            func = local_env.get('predict') or local_env.get('regress') \
+                or next((v for v in local_env.values() if callable(v)), None)
+            if not func:
+                raise ValueError("No valid function named 'predict', 'regress', or any callable found in LLM output.")
         except Exception as e:
-            raise RuntimeError(f"LLM call failed: {e}")
+            logger.error(f"[MakePredictFn ERROR] Could not exec LLM code: {e}\nCODE WAS:\n{code}")
+            raise
 
-    def _fit_common(self, X, y) -> None:
-        if not isinstance(X, pd.DataFrame):
-            X, y = check_X_y(X, y)
-
-        self.feature_names_in_ = self._get_feature_names(X)
-        self.target_name_ = self._get_target_name(y)
-        X_values = X.values if isinstance(X, pd.DataFrame) else X
-
-        formatted_data = self._format_training_data(X_values, y, self.feature_names_in_, self.target_name_)
-        self.training_prompt_ = self.prompt_template.format(data=formatted_data, scratchpad="")
-        self.heuristic_ = self._call_llm(self.training_prompt_)
+        def safe_predict_fn(features: dict):
+            try:
+                return func(**{**features, **aux_data})
+            except Exception as e:
+                logger.error(f"[PredictFn ERROR] {e} on features={features}")
+                raise
+        return safe_predict_fn
 
     def __getstate__(self):
         state = self.__dict__.copy()
@@ -88,45 +108,11 @@ class BasePromptEstimator(BaseEstimator):
 
     def __setstate__(self, state):
         self.__dict__.update(state)
-        api_key = os.getenv("OPENAI_API_KEY")
+        self._init_llm_client()
 
-        if not api_key:
-            warnings.warn(
-                "OPENAI_API_KEY is not set. "
-                "This PromptEstimator cannot make predictions until the key is available.",
-                RuntimeWarning
-            )
-
-        openai.api_key = api_key
-        self.llm_client = openai.OpenAI()
-
-    def __reduce__(self):
-        return (type(self), (self.model, self.prompt_template, self.verbose), self.__getstate__())
-
-    def _parse_tsv(self, tsv: str) -> pd.DataFrame:
-        """Parse tab-separated values (TSV) into a pandas DataFrame."""
-        try:
-            # Clean common LLM output artifacts
-            tsv_cleaned = tsv.strip().replace("```", "").strip()
-
-            # Use StringIO to treat the string like a file
-            df = pd.read_csv(StringIO(tsv_cleaned), sep="\t")
-
-            # Optionally: strip whitespace from column names
-            df.columns = df.columns.str.strip()
-
-            return df
-
-        except Exception as e:
-            raise ValueError(f"Failed to parse TSV output:\n{tsv}\nError: {e}")
-
-    def sample(self, n: int = 5) -> pd.DataFrame:
-        """Generate n synthetic examples that illustrate the heuristic."""
-        prompt = (
-            f"{self.heuristic_}\n\n"
-            f"Please generate {n} example rows in tabular format with the following columns:\n"
-            f"{', '.join(self.feature_names_in_ + [self.target_name_])}.\n"
-            f"Use tab-separated format. Do not explain."
-        )
-        text = self._call_llm(prompt)
-        return self._parse_tsv(text)
+    def show_heuristic_evolution(self):
+        print("🧠 Heuristic Evolution:\n")
+        for i, h in enumerate(self.heuristic_history_):
+            print(f"--- After chunk {i + 1} ---")
+            print(h.strip() if isinstance(h, str) else str(h))
+            print()

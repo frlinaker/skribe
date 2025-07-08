@@ -1,3 +1,4 @@
+asteval
 openai
 scikit-learn
 pandas

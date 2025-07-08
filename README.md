@@ -34,7 +34,7 @@ This type of semantic generalization is a powerful advantage for LLM-backed mode
 
 ---
 
-Now compare performance on a regression task where the data contains samples of objects falling from different heights, under different gravity. This is a classic physics problem, with a well-known equation:
+Now compare performance on a regression task where the data contains [samples of objects falling from different heights, under different gravity](examples/data/fall_train.csv). This is a classic physics problem, with a well-known equation:
 
 ```
 fall_time_s = sqrt((2 * height_m) / gravity_mps2)

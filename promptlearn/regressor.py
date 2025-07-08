@@ -1,79 +1,100 @@
-from typing import Optional, List
-import numpy as np
+import logging
+from typing import Optional
 import pandas as pd
-import re
-from sklearn.base import RegressorMixin
-from sklearn.metrics import mean_squared_error
-from sklearn.utils.validation import check_array
+import numpy as np
 from .base import BasePromptEstimator
-from tqdm import tqdm
+
+logger = logging.getLogger("promptlearn")
 
 DEFAULT_PROMPT_TEMPLATE = """\
-Analyze the following data and output only the final trained regression function (e.g., a linear or nonlinear equation) that best fits the data. The data has one of more features as input and the last column is the target value.
+You are a seasoned data scientist. Output a single valid Python function called 'regress' that, given the feature variables (see below), predicts a continuous value.
 
-Consider if there are known Laws of Physics or well-established relationships to the target variable and use these to inform or completely determine the output.
+Do NOT use any variable not defined below or present in the provided data. If you need external lookups, include them as Python lists or dicts at the top of your output.
 
-The function will be evaluated by an LLM, so just have an equation with the names of the variables in the dataset. 
+Your function must have signature: def regress(**features): ... (or with explicit arguments).
 
-Your answer should not include explanations, only the final equation. Use ascii characters only.
+Only output valid Python code, no markdown or explanations.
 
+{scratchpad}
 Data:
 {data}
 """
 
+class PromptRegressor(BasePromptEstimator):
+    def __init__(
+        self,
+        model: str = "o4-mini",
+        verbose: bool = False,
+        chunk_threshold: int = 300,
+        force_chunking: bool = False,
+        max_chunks: Optional[int] = None,
+        save_dir: Optional[str] = None,
+    ):
+        super().__init__(model, DEFAULT_PROMPT_TEMPLATE, verbose)
+        self.chunk_threshold = chunk_threshold
+        self.force_chunking = force_chunking
+        self.max_chunks = max_chunks
+        self.save_dir = save_dir
 
-class PromptRegressor(BasePromptEstimator, RegressorMixin):
-    def __init__(self, model: str = "o4-mini", prompt_template: Optional[str] = None, verbose: bool = False):
-        super().__init__(model, prompt_template or DEFAULT_PROMPT_TEMPLATE, verbose)
-        self.failed_predictions_: List[tuple] = []
-        self.explanation_: Optional[str] = None
+    def fit(self, X, y, scratchpad: str = ""):
+        if isinstance(X, np.ndarray):
+            X = pd.DataFrame(X, columns=[f"x{i}" for i in range(X.shape[1])])
+        elif not isinstance(X, pd.DataFrame):
+            X = pd.DataFrame(X)
 
-    def fit(self, X, y) -> "PromptRegressor":
-        print("🔧 Fitting PromptRegressor...")
-        self._fit_common(X, y)
-        self.explanation_ = self.heuristic_
-        print("\n📜 Final regression function:")
-        print(self.heuristic_)
+        if isinstance(y, (np.ndarray, list)):
+            y = pd.Series(y)
+
+        target_name = y.name if y.name else "target"
+        y = y.astype(float)
+        X = X.copy()
+        X[target_name] = y
+
+        df_clean = X.dropna(subset=[target_name])
+        if df_clean.shape[0] < 2:
+            logger.warning("Not enough complete rows for prompt construction.")
+
+        formatted_data = df_clean.head(10).to_csv(index=False)
+        prompt = self.safe_format(self.prompt_template, data=formatted_data, scratchpad=scratchpad)
+        if self.verbose:
+            logger.info(f"[LLM Prompt]\n{prompt}")
+
+        code = self._call_llm(prompt)
+        self.heuristic_history_.append(code)
+        self.heuristic_ = self._make_predict_fn(code, aux_data=getattr(self, "aux_data_", {}))
+        self.target_name_ = target_name
         return self
 
-    def _predict_one(self, x) -> float:
-        feature_string = self._format_features(x)
-        prompt = (
-            f"Given: {feature_string}\n"
-            f"Answer this question: What is the predicted {self.target_name_}?\n"
-            f"Use the following heuristic to calculate it: {self.heuristic_}\n"
-            "Respond only with a single number like 13.2 — no units, no formula, no explanation."
-        )
-        print(prompt)
-        raw = self._call_llm(prompt)
+    def predict(self, X):
+        if isinstance(X, np.ndarray):
+            if hasattr(self, "target_name_"):
+                n_features = X.shape[1]
+                feature_cols = [col for col in getattr(self, "feature_names_", [f"x{i}" for i in range(n_features)])]
+            else:
+                feature_cols = [f"x{i}" for i in range(X.shape[1])]
+            X = pd.DataFrame(X, columns=feature_cols)
+        elif not isinstance(X, pd.DataFrame):
+            X = pd.DataFrame(X)
 
-        match = re.search(r"-?\d+(\.\d+)?", raw)
-        if match:
+        if not hasattr(self, "feature_names_"):
+            self.feature_names_ = list(X.columns)
+
+        results = []
+        for idx, row in X.iterrows():
             try:
-                result = float(match.group())
-                print(f"Predicted: {result}")
-                return result
-            except ValueError:
-                pass
+                features = row.to_dict()
+                result = self.heuristic_(features)
+                results.append(float(result))
+            except Exception as e:
+                logger.error(f"[Predict Error] Row {idx}: {e}")
+                results.append(None)
+        return results
 
-        print("⚠️ Non-numeric LLM response:\n", raw)
-        self.failed_predictions_.append((feature_string, raw))
-        return np.nan
-
-    def predict(self, X) -> List[float]:
-        if isinstance(X, pd.DataFrame):
-            return [self._predict_one(row) for _, row in tqdm(X.iterrows(), total=len(X), desc="🔮 Predicting")]
-        else:
-            X_checked = check_array(X)
-            return [self._predict_one(x) for x in tqdm(X_checked, desc="🔮 Predicting")]
-
-    def score(self, X, y, sample_weight=None) -> float:
+    def score(self, X, y):
         y_pred = self.predict(X)
-        y_pred = np.array(y_pred)
-        y_true = np.array(y)
-
-        mask = ~np.isnan(y_pred)
-        if mask.sum() == 0:
-            raise ValueError("All predictions were NaN — check LLM output or prompt format.")
-
-        return -mean_squared_error(y_true[mask], y_pred[mask], sample_weight=sample_weight)
+        pairs = [(a, b) for a, b in zip(y_pred, y) if a is not None]
+        if not pairs:
+            logger.warning("No successful predictions!")
+            return 0.0
+        mse = sum((float(a) - float(b)) ** 2 for a, b in pairs) / len(pairs)
+        return mse

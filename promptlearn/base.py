@@ -40,7 +40,7 @@ class BasePromptEstimator:
                 model=self.model,
                 messages=[{"role": "user", "content": prompt}]
             )
-            content = response.choices[0].message.content.strip()
+            content = str(response.choices[0].message.content).strip()
             if self.verbose:
                 self._log.info("[LLM Response]\n%s", content)
             return content

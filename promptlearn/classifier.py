@@ -38,7 +38,7 @@ Data:
 """
 
 class PromptClassifier(BasePromptEstimator):
-    def __init__(self, model="gpt-4o", verbose: bool = True, max_train_rows: int = 10, llm_temperature: float = 0.0):
+    def __init__(self, model="gpt-4o", verbose: bool = True, max_train_rows: int = 100, llm_temperature: float = 0.0):
         super().__init__(model=model, verbose=verbose)
         self.max_train_rows = max_train_rows
         self.llm_temperature = llm_temperature

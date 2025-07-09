@@ -9,8 +9,7 @@
 [![Licence](https://img.shields.io/github/license/frlinaker/promptlearn
 )](https://mit-license.org/)
 
-**promptlearn** brings large language models into your scikit-learn workflow.  
-It replaces traditional estimators with language-native reasoning systems that learn, adapt, and describe patterns using natural language as the model substrate.
+**promptlearn** brings large language models into your scikit-learn workflow. It replaces traditional estimators with language-native reasoning systems that learn, adapt, and describe patterns using natural language as the model substrate. The output is directly executable and portable Python code that is executed in a safe sandbox environment during `predict()` calls.
 
 ---
 
@@ -18,23 +17,27 @@ It replaces traditional estimators with language-native reasoning systems that l
 
 `promptlearn` allows LLMs to internalize both structure and semantics during training. As a result, the models often exceed the capabilities of classical estimators when the task requires reasoning, real-world knowledge, or symbolic understanding.
 
-Consider a simple binary classification task: predicting whether an [animal is a mammal](examples/data/mammal_train.csv) based on its name, weight, and lifespan.
+Consider a simple binary classification task: predicting whether an [animal is a mammal](examples/benchmark_classifier.py) based on its name, weight, and lifespan.
 
 Traditional models depend solely on the input features. But `promptlearn` models can use their internal understanding of zoology to form highly accurate rules. Even when a label like `"Whale"` is never seen during training, the model knows it belongs to the mammal class.
 
-| Model                 | Accuracy |
-|-----------------------|----------|
-| `promptlearn-o4-mini` | **1.00** |
-| `promptlearn-gpt-4o`  | 0.97     |
-| `logistic_regression`| 0.60     |
-| `random_forest`       | 0.46     |
-| `dummy`               | 0.34     |
+                    model  accuracy  fit_time_sec  predict_time_sec
+      promptlearn_o3-mini      0.94     49.114336          0.002808
+      promptlearn_o4-mini      0.86     60.961045          0.002417
+promptlearn_gpt-3.5-turbo      0.66     20.246616          0.002738
+       promptlearn_gpt-4o      0.66     43.930959          0.002250
+      logistic_regression      0.60      0.016565          0.000962
+            decision_tree      0.53      0.001409          0.000529
+        gradient_boosting      0.53      0.020737          0.001094
+        promptlearn_gpt-4      0.40     12.494963          0.002196
+                    dummy      0.34      0.000554          0.000120
+            random_forest      0.28      0.010656          0.001659
 
 This type of semantic generalization is a powerful advantage for LLM-backed models.
 
 ---
 
-Now compare performance on a regression task where the data contains [samples of objects falling from different heights, under different gravity](examples/data/fall_train.csv). This is a classic physics problem, with a well-known equation:
+Now compare performance on a regression task where the data contains [samples of objects falling from different heights, under different gravity](examples/benchmark_regressor.py). This is a classic physics problem, with a well-known equation:
 
 ```
 fall_time_s = sqrt((2 * height_m) / gravity_mps2)
@@ -42,14 +45,17 @@ fall_time_s = sqrt((2 * height_m) / gravity_mps2)
 
 Recent `promptlearn` estimators are able to recover this exact formula and use it to generate near-perfect predictions:
 
-| Model                  | MSE       |
-|------------------------|-----------|
-| `promptlearn-o4-mini`  | **0.00006** |
-| `promptlearn-gpt-4o`   | 0.00006   |
-| `gradient_boosting`    | 0.035     |
-| `linear_regression`    | 0.498     |
-| `dummy`                | 5.27      |
-| `promptlearn-gpt-4`    | 43.17     |
+                    model     mse  fit_time_sec  predict_time_sec
+       promptlearn_gpt-4o   0.000         2.924             0.001
+      promptlearn_o3-mini   0.000        10.801             0.001
+      promptlearn_o4-mini   0.000         7.959             0.001
+            random_forest   0.028         0.013             0.002
+        gradient_boosting   0.035         0.011             0.001
+            decision_tree   0.067         0.001             0.000
+        linear_regression   0.498         0.001             0.000
+                    dummy   5.273         0.001             0.000
+promptlearn_gpt-3.5-turbo  18.193         3.009             0.002
+        promptlearn_gpt-4 855.445         2.428             0.001
 
 No feature engineering was performed. No physics constants were added. The model discovered the rule and applied it directly. Classical regressors, by contrast, approximated a curve but missed the exact structure.
 
@@ -70,13 +76,9 @@ These estimators follow the same API as other `scikit-learn` models (`fit`, `pre
 
 ### 📘 What it Learns: The Heuristic
 
-When you call `.fit()`, the LLM reviews your data and writes out an internal heuristic — a compact representation of what it has inferred. This heuristic might describe:
+When you call `.fit()`, the LLM reviews your data and generates executable Python code that realizes the found relationships.
 
-- A relationship between age, hours worked, and income
-- How education, gender, and occupation relate to survival rates
-- Why one row differs from another
-
-The result is a plain-text model. It is readable, portable, and expressive. This is stored in `.heuristic_`, and it powers all predictions.
+The result is thus a plain-text, human-readable, piece of code. It is readable, portable, and expressive. This is stored in `.heuristic_`, and it powers all predictions.
 
 ---
 
@@ -107,7 +109,7 @@ Input: country = "Norway"
 Output: has_blue_in_flag = 1
 ```
 
-Even if there is no signal in the data, the model may still predict correctly by referencing background information. This creates a kind of ambient “web join” during training and inference.
+Even if there is no signal in the data, the model may still predict correctly by referencing background information. This creates a kind of ambient “web join” during training that gets materialized as an explicit list or dictionary that expands all categorical values that are encountered during training, to cover unseen cases. This can include countries, flags, animals, and more.
 
 ---
 
@@ -122,20 +124,6 @@ This is possible because the LLM can hallucinate a plausible mapping based on:
 - Type hints or value patterns
 
 This makes rapid prototyping and conceptual modeling trivial.
-
----
-
-### 🧠 Scaling with Chunked Training
-
-To support large datasets, `promptlearn` uses a sliding window training mechanism.
-
-During `.fit()`:
-- The dataset is processed in batches (“chunks”)
-- The current heuristic is passed forward like a scratchpad
-- Each chunk contributes feedback and refinement
-- The model evolves with each window
-
-This allows training on limitless rows using a fixed memory budget. The process is transparent. If the dataset is large, chunked training activates automatically.
 
 ---
 
@@ -185,11 +173,8 @@ It is lightweight and NLP-focused.
 
 | Capability                  | Scikit-LLM         | promptlearn                |
 |-----------------------------|--------------------|----------------------------|
-| Prompt generated during fit | ❌ No               | ✅ Yes                     |
+| Produces runnable Python code | ❌ No               | ✅ Yes                     |
 | Regression support          | ❌ No               | ✅ Yes                     |
-| Produces textual heuristics | ❌ No               | ✅ Yes                     |
-| Works on tabular data       | ✅ Partial          | ✅ Full                    |
-| Generates sample rows       | ❌ No               | ✅ `.sample()`             |
 
 ---
 

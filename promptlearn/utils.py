@@ -4,7 +4,7 @@ import re
 import numpy as np
 import pandas as pd
 
-from typing import Callable
+from typing import Any, Callable, Dict, Type
 
 logger = logging.getLogger("promptlearn")
 
@@ -74,8 +74,16 @@ def make_predict_fn(code: str):
         raise ValueError("No valid function named 'predict' or any callable found in LLM output.")
     return fn
 
-def safe_predict(fn: Callable, features: dict) -> int:
-    # Try to cast all numbers (as string) to float or int
+def safe_exec_fn(
+    fn: Callable, 
+    features: Dict[str, Any], 
+    output_type: Type = int, 
+    default: Any = 0, 
+    label: str = "PredictFn"
+) -> Any:
+    """
+    Safely executes a function with cleaned features, coercing output to desired type.
+    """
     clean = {}
     for k, v in features.items():
         if v is None:
@@ -85,13 +93,10 @@ def safe_predict(fn: Callable, features: dict) -> int:
             clean[k] = v
         elif isinstance(v, str):
             try:
+                # Only convert to float if there's a dot, else int
                 if "." in v:
                     f = float(v)
-                    # Try to coerce to int if appropriate
-                    if f.is_integer():
-                        clean[k] = int(f)
-                    else:
-                        clean[k] = f
+                    clean[k] = int(f) if output_type is int and f.is_integer() else f
                 else:
                     clean[k] = int(v)
             except Exception:
@@ -100,8 +105,14 @@ def safe_predict(fn: Callable, features: dict) -> int:
             clean[k] = v
     try:
         res = fn(**clean)
-        # Always coerce output to int (default/fallback 0)
-        return int(res) if res is not None else 0
+        return output_type(res) if res is not None else default
     except Exception as e:
-        logger.error(f"[PredictFn ERROR] {e} on features={features}")
-        return 0
+        logger.error(f"[{label} ERROR] {e} on features={features}")
+        return default
+
+# For compatibility with previous usage:
+def safe_predict(fn: Callable, features: dict) -> int:
+    return safe_exec_fn(fn, features, output_type=int, default=0, label="PredictFn")
+
+def safe_regress(fn: Callable, features: dict) -> float:
+    return safe_exec_fn(fn, features, output_type=float, default=0.0, label="RegressFn")

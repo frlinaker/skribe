@@ -1,15 +1,13 @@
 import logging
 import numpy as np
 
-from typing import Callable, Optional
-
 from .base import BasePromptEstimator
 from .utils import prepare_training_data, generate_feature_dicts, extract_python_code, make_predict_fn, safe_predict
 
 logger = logging.getLogger("promptlearn")
 
 # Updated LLM prompt template with strong type casting and fallback instructions
-DEFAULT_PROMPT_TEMPLATE = """
+DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE = """
 Output a single valid Python function called 'predict' that, given the feature variables (see below), predicts the class as an integer (e.g., 0, 1).
 
 Do NOT use any variable not defined below or present in the provided data. If you need external lookups, include them as Python lists or dicts at the top of your output.
@@ -32,47 +30,10 @@ Data:
 
 class PromptClassifier(BasePromptEstimator):
     def __init__(self, model="gpt-4o", verbose: bool = True, max_train_rows: int = 100):
-        super().__init__(model=model, verbose=verbose)
-        self.max_train_rows = max_train_rows
-        self.python_code_: Optional[str] = None
-        self.predict_fn: Optional[Callable] = None
-        self.target_name_: Optional[str] = None
-        self.feature_names_: Optional[list] = None
+        super().__init__(model=model, verbose=verbose, max_train_rows=max_train_rows)
 
     def fit(self, X, y):
-        data, self.feature_names_, self.target_name_ = prepare_training_data(X, y)
-
-        # Use a small sample for LLM to avoid expensive calls
-        if len(data) > self.max_train_rows:
-            logger.info(f"Reducing training data from {data.shape[0]:,} to {self.max_train_rows:,} rows for LLM.")
-            sample_df = data.sample(self.max_train_rows, random_state=42)
-        else:
-            sample_df = data
-
-        csv_data = sample_df.to_csv(index=False)
-
-        prompt = DEFAULT_PROMPT_TEMPLATE.format(data=csv_data)
-        logger.info(f"[LLM Prompt]\n{prompt}")
-
-        # Call LLM and get code
-        code = self._call_llm(prompt)
-        if not isinstance(code, str):
-            code = str(code)
-        logger.info(f"[LLM Output]\n{code}")
-
-        # Remove markdown/code block if present (triple backticks)
-        code = extract_python_code(code)
-        if not code.strip():
-            logger.error("LLM output is empty after removing markdown/code block.")
-            raise ValueError("No code to exec from LLM output.")
-
-        self.python_code_ = code
-        print(f"the cleaned up code is: [START]{code}[END]")
-
-        # Compile the code into a function
-        self.predict_fn = make_predict_fn(code)
-
-        return self
+        return super()._fit(X, y, DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE)
 
     def predict(self, X) -> np.ndarray:
         if self.predict_fn is None:

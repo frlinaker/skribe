@@ -43,7 +43,7 @@ class PromptRegressor(BasePromptEstimator):
     ):
         super().__init__(model=model, verbose=verbose)
         self.max_train_rows = max_train_rows
-        self.heuristic_: Optional[str] = None
+        self.python_code_: Optional[str] = None
         self.regress_fn: Optional[Callable] = None
         self.target_name_: Optional[str] = None
         self.feature_names_: Optional[list] = None
@@ -73,9 +73,9 @@ class PromptRegressor(BasePromptEstimator):
     def __setstate__(self, state):
         self.__dict__.update(state)
         # Recompile code after loading
-        if getattr(self, "heuristic_", None):
+        if getattr(self, "python_code_", None):
             try:
-                self.regress_fn = self._make_regress_fn(self.heuristic_)
+                self.regress_fn = self._make_regress_fn(self.python_code_)
             except Exception as e:
                 logger.warning(f"Failed to recompile regression function: {e}")
                 self.regress_fn = None
@@ -129,7 +129,7 @@ class PromptRegressor(BasePromptEstimator):
             logger.error("LLM output is empty after removing markdown/code block.")
             raise ValueError("No code to exec from LLM output.")
 
-        self.heuristic_ = code
+        self.python_code_ = code
         print(f"the cleaned up code is: [START]{code}[END]")
 
         self.regress_fn = self._make_regress_fn(code)

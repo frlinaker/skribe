@@ -1,19 +1,11 @@
 import logging
 import pandas as pd
 import numpy as np
-from typing import Optional, Any, Callable, Dict
-import inspect
-import re
+from typing import Optional, Callable
 
-from .base import BasePromptEstimator
+from .base import BasePromptEstimator, normalize_feature_name
 
 logger = logging.getLogger("promptlearn")
-
-# Helper for robust Python identifier normalization
-def normalize_feature_name(name: str) -> str:
-    name = re.sub(r"[^a-zA-Z0-9]", "_", name)
-    name = re.sub(r"__+", "_", name)
-    return name.strip("_").lower()
 
 # Updated LLM prompt template with strong type casting and fallback instructions
 DEFAULT_PROMPT_TEMPLATE = """
@@ -38,11 +30,10 @@ Data:
 """
 
 class PromptClassifier(BasePromptEstimator):
-    def __init__(self, model="gpt-4o", verbose: bool = True, max_train_rows: int = 100, llm_temperature: float = 0.0):
+    def __init__(self, model="gpt-4o", verbose: bool = True, max_train_rows: int = 100):
         super().__init__(model=model, verbose=verbose)
         self.max_train_rows = max_train_rows
-        self.llm_temperature = llm_temperature
-        self.heuristic_: Optional[str] = None
+        self.python_code_: Optional[str] = None
         self.predict_fn: Optional[Callable] = None
         self.target_name_: Optional[str] = None
         self.feature_names_: Optional[list] = None
@@ -84,7 +75,7 @@ class PromptClassifier(BasePromptEstimator):
             logger.error("LLM output is empty after removing markdown/code block.")
             raise ValueError("No code to exec from LLM output.")
 
-        self.heuristic_ = code
+        self.python_code_ = code
         print(f"the cleaned up code is: [START]{code}[END]")
 
         # Compile the code into a function

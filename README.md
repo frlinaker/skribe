@@ -9,53 +9,53 @@
 [![Licence](https://img.shields.io/github/license/frlinaker/promptlearn
 )](https://mit-license.org/)
 
-**promptlearn** brings large language models into your scikit-learn workflow. It replaces traditional estimators with language-native reasoning systems that learn, adapt, and describe patterns using natural language as the model substrate. The output is directly executable and portable Python code that is executed in a safe sandbox environment during `predict()` calls.
+**promptlearn** brings large language models into your scikit-learn workflow. It is able to look at data, reason about the meaning of inputs and outputs, relate it to and identify relevant knowledge of the world, automatically building standalone executable Python code that augments the relationships of the original data with relevant materialized world-knowledge about categorical variables.
 
 ---
 
 ### 📊 Outperforming Traditional Models with Built-In Knowledge
 
-`promptlearn` allows LLMs to internalize both structure and semantics during training. As a result, the models often exceed the capabilities of classical estimators when the task requires reasoning, real-world knowledge, or symbolic understanding.
+Consider a simple binary classification task: predicting whether an [animal is a mammal](examples/benchmark_classifier.py) given things like its name, weight, and lifespan.
 
-Consider a simple binary classification task: predicting whether an [animal is a mammal](examples/benchmark_classifier.py) based on its name, weight, and lifespan.
+Traditional models depend solely on the input features. But `promptlearn` models can use their internal understanding of zoology to form highly accurate rules, pulling in data about known mammals, and making that knowledge available in explicit reference tables for subsequent predictions.
 
-Traditional models depend solely on the input features. But `promptlearn` models can use their internal understanding of zoology to form highly accurate rules. Even when a label like `"Whale"` is never seen during training, the model knows it belongs to the mammal class.
-
-                    model  accuracy  fit_time_sec  predict_time_sec
-      promptlearn_o3-mini      0.94     49.114336          0.002808
-      promptlearn_o4-mini      0.86     60.961045          0.002417
-promptlearn_gpt-3.5-turbo      0.66     20.246616          0.002738
-       promptlearn_gpt-4o      0.66     43.930959          0.002250
-      logistic_regression      0.60      0.016565          0.000962
-            decision_tree      0.53      0.001409          0.000529
-        gradient_boosting      0.53      0.020737          0.001094
-        promptlearn_gpt-4      0.40     12.494963          0.002196
-                    dummy      0.34      0.000554          0.000120
-            random_forest      0.28      0.010656          0.001659
+|             model             | accuracy (higher is better) | fit_time_sec | predict_time_sec |
+|:------------------------------|---------:|-------------:|-----------------:|
+|      promptlearn_o3-mini      |   0.94   |   49.11      |      0.0028      |
+|      promptlearn_o4-mini      |   0.86   |   60.96      |      0.0024      |
+| promptlearn_gpt-3.5-turbo     |   0.66   |   20.25      |      0.0027      |
+|      promptlearn_gpt-4o       |   0.66   |   43.93      |      0.0023      |
+|      logistic_regression      |   0.60   |   0.02       |      0.0010      |
+|        decision_tree          |   0.53   |   0.0014     |      0.0005      |
+|      gradient_boosting        |   0.53   |   0.02       |      0.0011      |
+|      promptlearn_gpt-4        |   0.40   |   12.49      |      0.0022      |
+|            dummy              |   0.34   |   0.0006     |      0.0001      |
+|        random_forest          |   0.28   |   0.01       |      0.0017      |
 
 This type of semantic generalization is a powerful advantage for LLM-backed models.
 
 ---
 
-Now compare performance on a regression task where the data contains [samples of objects falling from different heights, under different gravity](examples/benchmark_regressor.py). This is a classic physics problem, with a well-known equation:
+Now compare performance on a regression task where the data contains samples of [objects falling from different heights, under different gravity](examples/benchmark_regressor.py). This is a classic physics problem, with a well-known equation:
 
 ```
 fall_time_s = sqrt((2 * height_m) / gravity_mps2)
 ```
 
-Recent `promptlearn` estimators are able to recover this exact formula and use it to generate near-perfect predictions:
+`promptlearn` estimators are able to recover this exact formula, using just the dataframe itself, and use it to generate perfect predictions:
 
-                    model     mse  fit_time_sec  predict_time_sec
-       promptlearn_gpt-4o   0.000         2.924             0.001
-      promptlearn_o3-mini   0.000        10.801             0.001
-      promptlearn_o4-mini   0.000         7.959             0.001
-            random_forest   0.028         0.013             0.002
-        gradient_boosting   0.035         0.011             0.001
-            decision_tree   0.067         0.001             0.000
-        linear_regression   0.498         0.001             0.000
-                    dummy   5.273         0.001             0.000
-promptlearn_gpt-3.5-turbo  18.193         3.009             0.002
-        promptlearn_gpt-4 855.445         2.428             0.001
+|              model             |   mse (lower is better)  | fit_time_sec | predict_time_sec |
+|:-------------------------------|--------:|-------------:|-----------------:|
+|      promptlearn_gpt-4o        |  0.000  |     2.92     |      0.001       |
+|     promptlearn_o3-mini        |  0.000  |    10.80     |      0.001       |
+|     promptlearn_o4-mini        |  0.000  |     7.96     |      0.001       |
+|        random_forest           |  0.028  |     0.01     |      0.002       |
+|      gradient_boosting         |  0.035  |     0.01     |      0.001       |
+|        decision_tree           |  0.067  |     0.001    |      0.000       |
+|      linear_regression         |  0.498  |     0.001    |      0.000       |
+|             dummy              |  5.273  |     0.001    |      0.000       |
+| promptlearn_gpt-3.5-turbo      | 18.193  |     3.01     |      0.002       |
+|      promptlearn_gpt-4         | 855.445 |     2.43     |      0.001       |
 
 No feature engineering was performed. No physics constants were added. The model discovered the rule and applied it directly. Classical regressors, by contrast, approximated a curve but missed the exact structure.
 
@@ -71,45 +71,6 @@ These results highlight the practical benefit of reasoning models: they learn co
 - **`PromptRegressor`** – for modeling numeric relationships in data
 
 These estimators follow the same API as other `scikit-learn` models (`fit`, `predict`, `score`) but operate via dynamic prompt construction and few-shot abstraction.
-
----
-
-### 📘 What it Learns: The Heuristic
-
-When you call `.fit()`, the LLM reviews your data and generates executable Python code that realizes the found relationships.
-
-The result is thus a plain-text, human-readable, piece of code. It is readable, portable, and expressive. This is stored in `.heuristic_`, and it powers all predictions.
-
----
-
-### 🧠 Language-Aware Reasoning
-
-Because the models are backed by LLMs, they can reason across both structure and semantics:
-
-- Names of columns matter
-- Missing data can be explained or inferred
-- World knowledge is available by default
-
-A trained model might use context like:
-
-> “Bachelors” typically correlates with medium income  
-> “Private” workclass often means lower capital gain  
-> Rows with missing `native-country` likely default to “United States”
-
-This allows reasoning across incomplete, skewed, or lightly structured data without hand-tuning features.
-
----
-
-### 🧬 Background Knowledge Included
-
-The LLM brings its internal knowledge graph to the modeling task. For instance:
-
-```
-Input: country = "Norway"
-Output: has_blue_in_flag = 1
-```
-
-Even if there is no signal in the data, the model may still predict correctly by referencing background information. This creates a kind of ambient “web join” during training that gets materialized as an explicit list or dictionary that expands all categorical values that are encountered during training, to cover unseen cases. This can include countries, flags, animals, and more.
 
 ---
 

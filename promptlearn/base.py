@@ -1,5 +1,12 @@
-import os
 import logging
+import os
+import re
+
+# Helper for robust Python identifier normalization
+def normalize_feature_name(name: str) -> str:
+    name = re.sub(r"[^a-zA-Z0-9]", "_", name)
+    name = re.sub(r"__+", "_", name)
+    return name.strip("_").lower()
 
 class BasePromptEstimator:
     def __init__(self, model: str = "o4-mini", verbose: bool = False):

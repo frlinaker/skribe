@@ -1,9 +1,10 @@
 import logging
-import pandas as pd
 import numpy as np
-from typing import Optional, Callable
 
-from .base import BasePromptEstimator, normalize_feature_name
+from typing import Callable, Optional
+
+from .base import BasePromptEstimator
+from .utils import prepare_training_data, generate_feature_dicts, extract_python_code, make_predict_fn, safe_predict
 
 logger = logging.getLogger("promptlearn")
 
@@ -39,25 +40,15 @@ class PromptClassifier(BasePromptEstimator):
         self.feature_names_: Optional[list] = None
 
     def fit(self, X, y):
-        # Handle DataFrame or array
-        if isinstance(X, pd.DataFrame):
-            data = X.copy()
-            self.feature_names_ = [normalize_feature_name(col) for col in data.columns]
-            self.target_name_ = normalize_feature_name(y.name if hasattr(y, "name") else "target")
-            data[self.target_name_] = y
-            # Normalize column names for the LLM prompt
-            data.columns = [normalize_feature_name(col) for col in data.columns]
-        elif isinstance(X, np.ndarray):
-            data = pd.DataFrame(X)
-            self.feature_names_ = [f"col{i}" for i in range(X.shape[1])]
-            self.target_name_ = "target"
-            data[self.target_name_] = y
-            data.columns = self.feature_names_ + [self.target_name_]
-        else:
-            raise ValueError("X must be a pandas DataFrame or numpy array.")
+        data, self.feature_names_, self.target_name_ = prepare_training_data(X, y)
 
         # Use a small sample for LLM to avoid expensive calls
-        sample_df = data.head(self.max_train_rows)
+        if len(data) > self.max_train_rows:
+            logger.info(f"Reducing training data from {data.shape[0]:,} to {self.max_train_rows:,} rows for LLM.")
+            sample_df = data.sample(self.max_train_rows, random_state=42)
+        else:
+            sample_df = data
+
         csv_data = sample_df.to_csv(index=False)
 
         prompt = DEFAULT_PROMPT_TEMPLATE.format(data=csv_data)
@@ -70,7 +61,7 @@ class PromptClassifier(BasePromptEstimator):
         logger.info(f"[LLM Output]\n{code}")
 
         # Remove markdown/code block if present (triple backticks)
-        code = self._extract_python_code(code)
+        code = extract_python_code(code)
         if not code.strip():
             logger.error("LLM output is empty after removing markdown/code block.")
             raise ValueError("No code to exec from LLM output.")
@@ -79,95 +70,19 @@ class PromptClassifier(BasePromptEstimator):
         print(f"the cleaned up code is: [START]{code}[END]")
 
         # Compile the code into a function
-        self.predict_fn = self._make_predict_fn(code)
+        self.predict_fn = make_predict_fn(code)
 
         return self
 
     def predict(self, X) -> np.ndarray:
         if self.predict_fn is None:
             raise RuntimeError("Call fit() before predict().")
-
-        def normalize_dict_keys(d):
-            return {normalize_feature_name(k): v for k, v in d.items()}
-
-        results = []
-        if isinstance(X, pd.DataFrame):
-            for idx, row in X.iterrows():
-                features = normalize_dict_keys(row.to_dict())
-                res = self._safe_predict(self.predict_fn, features)
-                results.append(res)
-        elif isinstance(X, np.ndarray):
-            cols = self._feature_names_for_array(X)
-            cols = [normalize_feature_name(c) for c in cols]
-            for arr in X:
-                features = dict(zip(cols, arr))
-                features = normalize_dict_keys(features)
-                res = self._safe_predict(self.predict_fn, features)
-                results.append(res)
-        else:
-            raise ValueError("X must be a DataFrame or ndarray.")
+        # Use pre-computed self.feature_names_
+        results = [
+            safe_predict(self.predict_fn, features)
+            for features in generate_feature_dicts(X, self.feature_names_)
+        ]
         return np.array(results, dtype=int)
-
-    def _feature_names_for_array(self, X: np.ndarray):
-        # Try to recover column names from training (not ideal, but best-effort)
-        if hasattr(self, "feature_names_") and self.feature_names_ is not None:
-            return self.feature_names_
-        # fallback: col0, col1, ..., colN
-        return [f"col{i}" for i in range(X.shape[1])]
-
-    @staticmethod
-    def _extract_python_code(text: str) -> str:
-        # Remove code fences and cut at any obvious example markers
-        if "```python" in text:
-            text = text.split("```python", 1)[-1]
-        if "```" in text:
-            text = text.split("```", 1)[0]
-        return text
-
-    def _make_predict_fn(self, code: str):
-        # Use a shared dictionary for globals/locals
-        local_vars = {}
-        try:
-            exec(code, local_vars, local_vars)
-        except Exception as e:
-            raise ValueError(f"Could not exec LLM code: {e}\nCode was:\n{code}")
-        # Look for 'predict' function
-        fn = local_vars.get("predict", None)
-        if not callable(fn):
-            raise ValueError("No valid function named 'predict' or any callable found in LLM output.")
-        return fn
-
-    def _safe_predict(self, fn: Callable, features: dict) -> int:
-        # Try to cast all numbers (as string) to float or int
-        clean = {}
-        for k, v in features.items():
-            if v is None:
-                clean[k] = v
-                continue
-            if isinstance(v, (float, int)):
-                clean[k] = v
-            elif isinstance(v, str):
-                try:
-                    if "." in v:
-                        f = float(v)
-                        # Try to coerce to int if appropriate
-                        if f.is_integer():
-                            clean[k] = int(f)
-                        else:
-                            clean[k] = f
-                    else:
-                        clean[k] = int(v)
-                except Exception:
-                    clean[k] = v
-            else:
-                clean[k] = v
-        try:
-            res = fn(**clean)
-            # Always coerce output to int (default/fallback 0)
-            return int(res) if res is not None else 0
-        except Exception as e:
-            logger.error(f"[PredictFn ERROR] {e} on features={features}")
-            return 0
 
     def score(self, X, y):
         y_pred = self.predict(X)

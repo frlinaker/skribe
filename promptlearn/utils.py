@@ -1,6 +1,8 @@
 import logging
 import re
 
+from io import StringIO
+
 import numpy as np
 import pandas as pd
 
@@ -130,3 +132,21 @@ def safe_predict(fn: Callable, features: dict) -> int:
 
 def safe_regress(fn: Callable, features: dict) -> float:
     return safe_exec_fn(fn, features, output_type=float, default=0.0, label="RegressFn")
+
+
+def parse_tsv(tsv: str) -> pd.DataFrame:
+    """Parse tab-separated values (TSV) into a pandas DataFrame."""
+    try:
+        # Clean common LLM output artifacts
+        tsv_cleaned = tsv.strip().replace("```", "").strip()
+
+        # Use StringIO to treat the string like a file
+        df = pd.read_csv(StringIO(tsv_cleaned), sep="\t")
+
+        # Optionally: strip whitespace from column names
+        df.columns = df.columns.str.strip()
+
+        return df
+
+    except Exception as e:
+        raise ValueError(f"Failed to parse TSV output:\n{tsv}\nError: {e}")

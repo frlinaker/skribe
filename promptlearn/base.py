@@ -3,7 +3,12 @@ import os
 
 from typing import Callable, Optional
 
-from .utils import make_predict_fn, prepare_training_data, extract_python_code
+from .utils import (
+    make_predict_fn,
+    prepare_training_data,
+    extract_python_code,
+    parse_tsv,
+)
 
 logger = logging.getLogger("promptlearn")
 
@@ -125,3 +130,14 @@ class BasePromptEstimator:
         self.predict_fn = make_predict_fn(code)
 
         return self
+
+    def sample(self, n: int = 5):
+        """Generate n synthetic examples that illustrate the heuristic."""
+        prompt = (
+            f"{self.python_code_}\n\n"
+            f"Please generate {n} example rows in tabular format with the following columns:\n"
+            f"{', '.join(self.feature_names_ + [self.target_name_])}.\n"
+            f"Use tab-separated format. Do not explain."
+        )
+        text = self._call_llm(prompt)
+        return parse_tsv(text)

@@ -1,12 +1,10 @@
 import logging
 import numpy as np
+import pandas as pd
 
 from .base import BasePromptEstimator
 from .utils import (
-    prepare_training_data,
     generate_feature_dicts,
-    extract_python_code,
-    make_predict_fn,
     safe_predict,
 )
 
@@ -45,12 +43,14 @@ class PromptClassifier(BasePromptEstimator):
     def predict(self, X) -> np.ndarray:
         if self.predict_fn is None:
             raise RuntimeError("Call fit() before predict().")
-        # Use pre-computed self.feature_names_
-        results = [
-            safe_predict(self.predict_fn, features)
-            for features in generate_feature_dicts(X, self.feature_names_)
-        ]
-        return np.array(results, dtype=int)
+        if isinstance(X, (pd.DataFrame, np.ndarray)):
+            # Use pre-computed self.feature_names_
+            results = [
+                safe_predict(self.predict_fn, features)
+                for features in generate_feature_dicts(X, self.feature_names_)
+            ]
+            return np.array(results, dtype=int)
+        raise ValueError("X must be a DataFrame or ndarray.")
 
     def score(self, X, y):
         y_pred = self.predict(X)

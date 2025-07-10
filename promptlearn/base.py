@@ -9,9 +9,7 @@ logger = logging.getLogger("promptlearn")
 
 
 class BasePromptEstimator:
-    def __init__(
-        self, model: str = "o4-mini", verbose: bool = False, max_train_rows: int = 100
-    ):
+    def __init__(self, model: str, verbose: bool, max_train_rows: int):
         self.model = model
         self.verbose = verbose
         self.max_train_rows = max_train_rows

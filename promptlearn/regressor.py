@@ -31,12 +31,7 @@ Data:
 
 
 class PromptRegressor(BasePromptEstimator):
-    def __init__(
-        self,
-        model: str = "gpt-4o",
-        verbose: bool = True,
-        max_train_rows: int = 100,
-    ):
+    def __init__(self, model="gpt-4o", verbose: bool = True, max_train_rows: int = 100):
         super().__init__(model=model, verbose=verbose, max_train_rows=max_train_rows)
 
     def fit(self, X, y) -> "PromptRegressor":

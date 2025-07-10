@@ -2,7 +2,13 @@ import logging
 import numpy as np
 
 from .base import BasePromptEstimator
-from .utils import prepare_training_data, generate_feature_dicts, extract_python_code, make_predict_fn, safe_predict
+from .utils import (
+    prepare_training_data,
+    generate_feature_dicts,
+    extract_python_code,
+    make_predict_fn,
+    safe_predict,
+)
 
 logger = logging.getLogger("promptlearn")
 
@@ -28,11 +34,12 @@ Data:
 {data}
 """
 
+
 class PromptClassifier(BasePromptEstimator):
     def __init__(self, model="gpt-4o", verbose: bool = True, max_train_rows: int = 100):
         super().__init__(model=model, verbose=verbose, max_train_rows=max_train_rows)
 
-    def fit(self, X, y):
+    def fit(self, X, y) -> "PromptClassifier":
         return super()._fit(X, y, DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE)
 
     def predict(self, X) -> np.ndarray:

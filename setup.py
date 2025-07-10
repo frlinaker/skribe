@@ -9,7 +9,7 @@ setup(
     name="promptlearn",
     version=version_ns["__version__"],
     description="LLM-powered estimators for scikit-learn pipelines",
-    long_description=open("README.md", 'r', encoding='utf-8').read(),
+    long_description=open("README.md", "r", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
     author="Fredrik Linaker",
     author_email="fredrik.linaker@gmail.com",
@@ -23,7 +23,7 @@ setup(
         "pandas",
         "numpy",
         "joblib",
-        "tqdm"
+        "tqdm",
     ],
     python_requires=">=3.8",
     include_package_data=True,
@@ -31,6 +31,6 @@ setup(
         "License :: OSI Approved :: MIT License",
         "Programming Language :: Python :: 3",
         "Intended Audience :: Developers",
-        "Topic :: Scientific/Engineering :: Artificial Intelligence"
-    ]
+        "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    ],
 )

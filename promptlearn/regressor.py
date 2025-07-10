@@ -1,6 +1,7 @@
 import logging
 import numpy as np
-import re
+
+from sklearn.metrics import r2_score
 
 from .base import BasePromptEstimator
 from .utils import generate_feature_dicts, safe_regress
@@ -28,16 +29,17 @@ Data:
 {data}
 """
 
+
 class PromptRegressor(BasePromptEstimator):
     def __init__(
         self,
         model: str = "gpt-4o",
         verbose: bool = True,
-        max_train_rows: int = 10,
+        max_train_rows: int = 100,
     ):
         super().__init__(model=model, verbose=verbose, max_train_rows=max_train_rows)
 
-    def fit(self, X, y):
+    def fit(self, X, y) -> "PromptRegressor":
         return super()._fit(X, y, DEFAULT_REGRESSION_PROMPT_TEMPLATE)
 
     def predict(self, X) -> np.ndarray:
@@ -53,7 +55,5 @@ class PromptRegressor(BasePromptEstimator):
     def score(self, X, y):
         y_pred = self.predict(X)
         y_true = np.array(y)
-        # Remove None or unknowns from y_pred for scoring (force 0.0)
         y_pred = np.array([float(v) if v is not None else 0.0 for v in y_pred])
-        # Mean squared error
-        return ((y_true - y_pred) ** 2).mean()
+        return r2_score(y_true, y_pred)

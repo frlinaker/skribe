@@ -1,6 +1,7 @@
 import pandas as pd
 from promptlearn import PromptRegressor
 
+
 def test_zero_row_regressor_runs():
     X = pd.DataFrame(columns=["length"])
     y = pd.Series(name="mass", dtype=float)

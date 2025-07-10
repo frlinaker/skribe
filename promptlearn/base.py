@@ -7,8 +7,11 @@ from .utils import make_predict_fn, prepare_training_data, extract_python_code
 
 logger = logging.getLogger("promptlearn")
 
+
 class BasePromptEstimator:
-    def __init__(self, model: str = "o4-mini", verbose: bool = False, max_train_rows: int = 100):
+    def __init__(
+        self, model: str = "o4-mini", verbose: bool = False, max_train_rows: int = 100
+    ):
         self.model = model
         self.verbose = verbose
         self.max_train_rows = max_train_rows
@@ -27,7 +30,7 @@ class BasePromptEstimator:
         return {
             "model": self.model,
             "verbose": self.verbose,
-            "max_train_rows": self.max_train_rows
+            "max_train_rows": self.max_train_rows,
         }
 
     # used by GridSearchCV
@@ -40,10 +43,14 @@ class BasePromptEstimator:
         try:
             import openai
         except ImportError:
-            raise ImportError("You must install the 'openai' package to use PromptEstimator classes.")
+            raise ImportError(
+                "You must install the 'openai' package to use PromptEstimator classes."
+            )
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
-            raise RuntimeError("OPENAI_API_KEY environment variable must be set to use LLM models.")
+            raise RuntimeError(
+                "OPENAI_API_KEY environment variable must be set to use LLM models."
+            )
         openai.api_key = api_key
         return openai.OpenAI()
 
@@ -57,7 +64,9 @@ class BasePromptEstimator:
     # used by joblib
     def __setstate__(self, state):
         self.__dict__.update(state)
-        self.llm_client = self._init_llm_client()  # Re-initialize LLM client on re-creation of object
+        self.llm_client = (
+            self._init_llm_client()
+        )  # Re-initialize LLM client on re-creation of object
         # Now do any additional setup specific to this class
         if getattr(self, "python_code_", None):
             try:
@@ -72,8 +81,7 @@ class BasePromptEstimator:
             self._log.info("[Prompt to LLM]\n%s", prompt)
         try:
             response = self.llm_client.chat.completions.create(
-                model=self.model,
-                messages=[{"role": "user", "content": prompt}]
+                model=self.model, messages=[{"role": "user", "content": prompt}]
             )
             content = str(response.choices[0].message.content).strip()
             if self.verbose:
@@ -88,7 +96,9 @@ class BasePromptEstimator:
 
         # Use a small sample for LLM to avoid expensive calls
         if len(data) > self.max_train_rows:
-            logger.info(f"Reducing training data from {data.shape[0]:,} to {self.max_train_rows:,} rows for LLM.")
+            logger.info(
+                f"Reducing training data from {data.shape[0]:,} to {self.max_train_rows:,} rows for LLM."
+            )
             sample_df = data.sample(self.max_train_rows, random_state=42)
         else:
             sample_df = data

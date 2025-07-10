@@ -8,18 +8,22 @@ from typing import Any, Callable, Dict, Type
 
 logger = logging.getLogger("promptlearn")
 
+
 # Helper for robust Python identifier normalization
 def normalize_feature_name(name: str) -> str:
     name = re.sub(r"[^a-zA-Z0-9]", "_", name)
     name = re.sub(r"__+", "_", name)
     return name.strip("_").lower()
 
+
 def generate_feature_dicts(X, feature_names):
     """
     Returns an iterable of feature dicts with normalized keys, from X (DataFrame or ndarray).
     """
+
     def normalize_keys(d):
         return {normalize_feature_name(k): v for k, v in d.items()}
+
     if isinstance(X, pd.DataFrame):
         for _, row in X.iterrows():
             yield normalize_keys(row.to_dict())
@@ -30,6 +34,7 @@ def generate_feature_dicts(X, feature_names):
     else:
         raise ValueError("X must be a DataFrame or ndarray.")
 
+
 def extract_python_code(text: str) -> str:
     # Remove code fences and cut at any obvious example markers
     if "```python" in text:
@@ -38,13 +43,16 @@ def extract_python_code(text: str) -> str:
         text = text.split("```", 1)[0]
     return text
 
+
 def prepare_training_data(X, y):
     """
     Returns: data (pd.DataFrame), feature_names (list), target_name (str)
     """
     if isinstance(X, pd.DataFrame):
         data = X.copy()
-        target_name = normalize_feature_name(y.name if hasattr(y, "name") and y.name else "target")
+        target_name = normalize_feature_name(
+            y.name if hasattr(y, "name") and y.name else "target"
+        )
         data[target_name] = y.values if hasattr(y, "values") else y
         # Normalize all columns (including target)
         data.columns = [normalize_feature_name(col) for col in data.columns]
@@ -61,6 +69,7 @@ def prepare_training_data(X, y):
         raise ValueError("X must be a pandas DataFrame or numpy array.")
     return data, feature_names, target_name
 
+
 def make_predict_fn(code: str):
     # Use a shared dictionary for globals/locals
     local_vars = {}
@@ -71,15 +80,18 @@ def make_predict_fn(code: str):
     # Look for 'predict' function
     fn = local_vars.get("predict", None)
     if not callable(fn):
-        raise ValueError("No valid function named 'predict' or any callable found in LLM output.")
+        raise ValueError(
+            "No valid function named 'predict' or any callable found in LLM output."
+        )
     return fn
 
+
 def safe_exec_fn(
-    fn: Callable, 
-    features: Dict[str, Any], 
-    output_type: Type = int, 
-    default: Any = 0, 
-    label: str = "PredictFn"
+    fn: Callable,
+    features: Dict[str, Any],
+    output_type: Type = int,
+    default: Any = 0,
+    label: str = "PredictFn",
 ) -> Any:
     """
     Safely executes a function with cleaned features, coercing output to desired type.
@@ -110,9 +122,11 @@ def safe_exec_fn(
         logger.error(f"[{label} ERROR] {e} on features={features}")
         return default
 
+
 # For compatibility with previous usage:
 def safe_predict(fn: Callable, features: dict) -> int:
     return safe_exec_fn(fn, features, output_type=int, default=0, label="PredictFn")
+
 
 def safe_regress(fn: Callable, features: dict) -> float:
     return safe_exec_fn(fn, features, output_type=float, default=0.0, label="RegressFn")

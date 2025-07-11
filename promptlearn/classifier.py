@@ -26,6 +26,8 @@ If there is no data given, analyze the names of the input and output columns (as
 
 Your function must have signature: def predict(**features): ... (or with explicit arguments).
 
+If you use double quotes inside a dictionary key, always use single quotes to surround the key, or escape the inner double quotes.
+
 Only output valid Python code, no markdown or explanations.
 
 Data:

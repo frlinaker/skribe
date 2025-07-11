@@ -40,3 +40,7 @@ predictor_prompt.txt
 
 # Joblib objects
 *.joblib
+
+# Test and coverage
+htmlcov/
+.coverage

@@ -1,5 +1,6 @@
 import logging
 import numpy as np
+import pandas as pd
 
 from sklearn.metrics import r2_score
 
@@ -23,6 +24,8 @@ If there is no data given, analyze the names of the input and output columns (as
 
 Your function must have signature: def predict(**features): ... (or with explicit arguments).
 
+If you use double quotes inside a dictionary key, always use single quotes to surround the key, or escape the inner double quotes.
+
 Only output valid Python code, no markdown or explanations.
 
 Data:
@@ -40,12 +43,14 @@ class PromptRegressor(BasePromptEstimator):
     def predict(self, X) -> np.ndarray:
         if self.predict_fn is None:
             raise RuntimeError("Call fit() before predict().")
-        # Use pre-computed self.feature_names_
-        results = [
-            safe_regress(self.predict_fn, features)
-            for features in generate_feature_dicts(X, self.feature_names_)
-        ]
-        return np.array(results, dtype=float)
+        if isinstance(X, (pd.DataFrame, np.ndarray)):
+            # Use pre-computed self.feature_names_
+            results = [
+                safe_regress(self.predict_fn, features)
+                for features in generate_feature_dicts(X, self.feature_names_)
+            ]
+            return np.array(results, dtype=float)
+        raise ValueError("X must be a DataFrame or ndarray.")
 
     def score(self, X, y):
         y_pred = self.predict(X)

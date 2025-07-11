@@ -1,5 +1,6 @@
 import logging
 import os
+import warnings
 
 from typing import Callable, Optional
 
@@ -20,9 +21,6 @@ class BasePromptEstimator:
         self.max_train_rows = max_train_rows
         self.llm_client = self._init_llm_client()
         self.predict_fn: Optional[Callable] = None
-        self._log = logging.getLogger("promptlearn")
-        if not self._log.hasHandlers():
-            logging.basicConfig(level=logging.INFO)
         self.target_name_: Optional[str] = None
         self.feature_names_: Optional[list] = None
         self.python_code_: Optional[str] = None
@@ -75,23 +73,25 @@ class BasePromptEstimator:
             try:
                 self.predict_fn = make_predict_fn(self.python_code_)
             except Exception as e:
-                logger.warning(f"Failed to recompile regression function: {e}")
+                warnings.warn(
+                    f"Failed to recompile regression function: {e}", UserWarning
+                )
                 self.predict_fn = None
 
     def _call_llm(self, prompt: str) -> str:
         """Call the language model, return the code as string."""
         if self.verbose:
-            self._log.info("[Prompt to LLM]\n%s", prompt)
+            logger.info("[Prompt to LLM]\n%s", prompt)
         try:
             response = self.llm_client.chat.completions.create(
                 model=self.model, messages=[{"role": "user", "content": prompt}]
             )
             content = str(response.choices[0].message.content).strip()
             if self.verbose:
-                self._log.info("[LLM Response]\n%s", content)
+                logger.info("[LLM Response]\n%s", content)
             return content
         except Exception as e:
-            self._log.error("LLM call failed: %s", e)
+            logger.error("LLM call failed: %s", e)
             raise RuntimeError(f"LLM call failed: {e}")
 
     def _fit(self, X, y, prompt: str):
@@ -133,6 +133,16 @@ class BasePromptEstimator:
 
     def sample(self, n: int = 5):
         """Generate n synthetic examples that illustrate the heuristic."""
+        # Check that columns have some sort of names
+        if (
+            not hasattr(self, "feature_names_")
+            or self.feature_names_ is None
+            or not hasattr(self, "target_name_")
+            or self.target_name_ is None
+        ):
+            raise RuntimeError(
+                "Call fit() before sample(): feature names or target name not set."
+            )
         prompt = (
             f"{self.python_code_}\n\n"
             f"Please generate {n} example rows in tabular format with the following columns:\n"

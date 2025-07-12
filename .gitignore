@@ -44,3 +44,6 @@ predictor_prompt.txt
 # Test and coverage
 htmlcov/
 .coverage
+
+# External datasets, like from Kaggle
+examples/external_data

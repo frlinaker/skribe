@@ -16,15 +16,7 @@ setup(
     url="https://github.com/frlinaker/promptlearn",
     license="MIT",
     packages=find_packages(),
-    install_requires=[
-        "asteval",
-        "scikit-learn",
-        "openai",
-        "pandas",
-        "numpy",
-        "joblib",
-        "tqdm",
-    ],
+    install_requires=["scikit-learn", "openai", "pandas", "numpy", "joblib"],
     python_requires=">=3.8",
     include_package_data=True,
     classifiers=[

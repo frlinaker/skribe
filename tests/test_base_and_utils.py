@@ -15,3 +15,17 @@ def test_call_llm_raises(monkeypatch):
     monkeypatch.setattr(est, "llm_client", None)
     with pytest.raises(Exception):
         est._call_llm("this should fail")
+
+
+def test_extend_code_handles_llm_failure(monkeypatch):
+    class DummyEstimator(BasePromptEstimator):
+        def __init__(self):
+            super().__init__(model="dummy-model", verbose=False, max_train_rows=10)
+
+        def _call_llm(self, prompt: str):
+            raise RuntimeError("Mocked LLM failure")
+
+    estimator = DummyEstimator()
+    # Should log a warning and return original code unchanged
+    result = estimator._extend_code("def predict(**features): return 42")
+    assert result.strip() == "def predict(**features): return 42"

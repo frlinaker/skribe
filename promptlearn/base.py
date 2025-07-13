@@ -23,6 +23,7 @@ class BasePromptEstimator:
         self.predict_fn: Optional[Callable] = None
         self.target_name_: Optional[str] = None
         self.feature_names_: Optional[list] = None
+        self.raw_python_code_: Optional[str] = None
         self.python_code_: Optional[str] = None
 
     # used by GridSearchCV
@@ -123,13 +124,36 @@ class BasePromptEstimator:
             logger.error("LLM output is empty after removing markdown/code block.")
             raise ValueError("No code to exec from LLM output.")
 
-        self.python_code_ = code
         print(f"the cleaned up code is: [START]{code}[END]")
+        self.raw_python_code_ = code
+
+        extended_code = self._extend_code(code)
+        self.python_code_ = extended_code
+        print(f"the extended code is: [START]{extended_code}[END]")
 
         # Compile the code into a function
-        self.predict_fn = make_predict_fn(code)
+        self.predict_fn = make_predict_fn(extended_code)
 
         return self
+
+    def _extend_code(self, code: str) -> str:
+        logger.info("[Post-Process] Expanding code via second LLM pass...")
+        refinement_prompt = (
+            "The following function may use a dictionary, set, or mapping based on domain knowledge (e.g., country names, animal types).\n"
+            "Please re-write the function to extend any such mappings with many more possible real-world keys, if applicable.\n"
+            "Try to figure out the logic of the function based on the variable names and values that are processed in the function.\n"
+            "Avoid changing the logic or structure beyond extending categorical support.\n"
+            "Only return valid Python code.\n\n"
+            f"{code}"
+        )
+        try:
+            refined_code = self._call_llm(refinement_prompt)
+            refined_code = extract_python_code(str(refined_code))
+            logger.info("[Post-Process] Successfully extended function.")
+            return refined_code
+        except Exception as e:
+            logger.warning(f"[Post-Process] Skipping refinement: {e}")
+        return code  # fallback: pass back the original code
 
     def sample(self, n: int = 5):
         """Generate n synthetic examples that illustrate the heuristic."""

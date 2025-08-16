@@ -224,56 +224,94 @@ def make_promptlearn_variant(
 
 def default_models_for_task_type(task_type: str) -> List[ModelSpec]:
     models: List[ModelSpec] = []
-    # Optional env var: PLBENCH_LLM_MODELS="gpt-4o,gpt-5" to get multiple PromptLearn variants
+    # LLM variants: by default include both GPTs; overridable via env.
+    # - Set PLBENCH_LLM_MODELS="modelA,modelB" to customize.
+    # - Set PLBENCH_DISABLE_LLM=1 to disable adding PromptLearn models entirely.
+    disable_llm = os.getenv("PLBENCH_DISABLE_LLM", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+    }
     llm_env = os.getenv("PLBENCH_LLM_MODELS", "").strip()
-    llm_variants = [s.strip() for s in llm_env.split(",") if s.strip()]
+    if llm_env:
+        llm_variants = [s.strip() for s in llm_env.split(",") if s.strip()]
+    else:
+        llm_variants = [] if disable_llm else ["gpt-4o", "gpt-5"]
+
+    def _try_add(name: str, import_path: str, **params):
+        """Append a sklearn/xgboost model only if import works in this environment."""
+        try:
+            module, _ = import_path.rsplit(".", 1)
+            importlib.import_module(module)
+        except Exception:
+            return
+        models.append(make_sklearn(name, import_path, **params))
 
     if task_type == "classification":
-        models.append(
-            make_sklearn(
-                "LogReg", "sklearn.linear_model.LogisticRegression", max_iter=1000
-            )
+        # Linear baseline
+        _try_add("LogReg", "sklearn.linear_model.LogisticRegression", max_iter=1000)
+        # Trees & ensembles
+        _try_add("DT", "sklearn.tree.DecisionTreeClassifier", random_state=0)
+        _try_add(
+            "RF",
+            "sklearn.ensemble.RandomForestClassifier",
+            n_estimators=300,
+            random_state=0,
         )
-        models.append(
-            make_sklearn(
-                "RF",
-                "sklearn.ensemble.RandomForestClassifier",
-                n_estimators=300,
-                random_state=0,
-            )
+        # Support Vector Machine (enable probabilities for fairer comparison on some metrics)
+        _try_add(
+            "SVM", "sklearn.svm.SVC", kernel="rbf", probability=True, random_state=0
         )
-        if llm_variants:
+        # XGBoost (optional; added if xgboost is installed)
+        _try_add(
+            "XGB",
+            "xgboost.XGBClassifier",
+            n_estimators=300,
+            learning_rate=0.1,
+            max_depth=6,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            eval_metric="logloss",
+            tree_method="hist",
+        )
+        if not disable_llm:
             for llm in llm_variants:
                 pl = make_promptlearn_variant(
                     "classifier", llm_name=llm, name=f"PromptLearnClf[{llm}]"
                 )
                 if pl:
                     models.append(pl)
-        else:
-            pl = make_promptlearn("classifier")
-            if pl:
-                models.append(pl)
     elif task_type == "regression":
-        models.append(make_sklearn("LinReg", "sklearn.linear_model.LinearRegression"))
-        models.append(
-            make_sklearn(
-                "RFReg",
-                "sklearn.ensemble.RandomForestRegressor",
-                n_estimators=300,
-                random_state=0,
-            )
+        # Linear baseline
+        _try_add("LinReg", "sklearn.linear_model.LinearRegression")
+        # Trees & ensembles
+        _try_add("DTReg", "sklearn.tree.DecisionTreeRegressor", random_state=0)
+        _try_add(
+            "RFReg",
+            "sklearn.ensemble.RandomForestRegressor",
+            n_estimators=300,
+            random_state=0,
         )
-        if llm_variants:
+        # Support Vector Regression (RBF kernel is a strong general baseline)
+        _try_add("SVR", "sklearn.svm.SVR", kernel="rbf")
+        # XGBoost (optional; added if xgboost is installed)
+        _try_add(
+            "XGBReg",
+            "xgboost.XGBRegressor",
+            n_estimators=500,
+            learning_rate=0.05,
+            max_depth=8,
+            subsample=0.8,
+            colsample_bytree=0.8,
+            tree_method="hist",
+        )
+        if not disable_llm:
             for llm in llm_variants:
                 pl = make_promptlearn_variant(
                     "regressor", llm_name=llm, name=f"PromptLearnReg[{llm}]"
                 )
                 if pl:
                     models.append(pl)
-        else:
-            pl = make_promptlearn("regressor")
-            if pl:
-                models.append(pl)
     else:
         raise ValueError(f"Unsupported task_type: {task_type}")
     return models
@@ -308,18 +346,18 @@ def _split_X_y(df: pd.DataFrame, target: str) -> Tuple[pd.DataFrame, pd.Series]:
 def _maybe_wrap_preprocessor(
     est: Any, model_spec: ModelSpec, X_train: pd.DataFrame, task_type: str
 ):
-    """If estimator is an sklearn model and X has categorical/text columns, wrap with
-    a ColumnTransformer(OneHotEncoder) → Pipeline(est). PromptLearn models are
+    """If estimator is from a numeric ML library (sklearn or xgboost) and X has
+    categorical/text columns, wrap with a ColumnTransformer (OneHotEncoder +
+    optional StandardScaler for numeric) → Pipeline(est). PromptLearn models are
     left untouched to keep raw text available.
     """
-    # Heuristic: only wrap sklearn models
-    is_sklearn = isinstance(
-        model_spec.import_path, str
-    ) and model_spec.import_path.startswith("sklearn.")
-    if not is_sklearn:
+    # Heuristic: wrap models from numeric libs that expect numeric arrays (sklearn, xgboost)
+    ipath = model_spec.import_path or ""
+    is_numeric_lib = ipath.startswith("sklearn.") or ipath.startswith("xgboost.")
+    if not is_numeric_lib:
         return est, {"pre": None}
 
-    # Identify categorical columns
+    # Identify categorical & numeric columns
     cat_cols = [
         c
         for c in X_train.columns
@@ -327,19 +365,48 @@ def _maybe_wrap_preprocessor(
         or is_string_dtype(X_train[c])
         or X_train[c].dtype == object
     ]
-    if not cat_cols:
-        return est, {"pre": None}
-
     num_cols = [c for c in X_train.columns if c not in cat_cols]
 
     from sklearn.compose import ColumnTransformer
     from sklearn.preprocessing import OneHotEncoder
     from sklearn.pipeline import Pipeline
 
+    # Optional numeric scaling for SVMs (helps a lot), keep passthrough otherwise.
+    needs_scale = False
+    try:
+        ip = (model_spec.import_path or "").lower()
+        needs_scale = (".svm." in ip) or ip.endswith("svc") or ip.endswith("svr")
+    except Exception:
+        needs_scale = False
+    if needs_scale and len(num_cols) > 0:
+        from sklearn.preprocessing import StandardScaler
+
+        num_transformer = StandardScaler(with_mean=False)  # safe with sparse OHE
+    else:
+        num_transformer = "passthrough"
+
+    # OneHotEncoder sparse/dense compatibility across sklearn versions
+    def _ohe(**kw):
+        try:
+            return OneHotEncoder(handle_unknown="ignore", **kw)
+        except TypeError:
+            # sklearn <1.2 fallback: use 'sparse' instead of 'sparse_output'
+            if "sparse_output" in kw:
+                v = kw.pop("sparse_output")
+                kw["sparse"] = v
+            return OneHotEncoder(handle_unknown="ignore", **kw)
+
+    # Prefer sparse OHE unless we need dense for some downstream estimators; SVM with RBF can handle dense
+    ohe = _ohe(sparse_output=True)
+
     pre = ColumnTransformer(
         transformers=[
-            ("cat", OneHotEncoder(handle_unknown="ignore"), cat_cols),
-            ("num", "passthrough", num_cols),
+            ("cat", ohe, cat_cols) if len(cat_cols) > 0 else ("noop_cat", "drop", []),
+            (
+                ("num", num_transformer, num_cols)
+                if len(num_cols) > 0
+                else ("noop_num", "drop", [])
+            ),
         ]
     )
     pipe = Pipeline(steps=[("pre", pre), ("est", est)])
@@ -457,7 +524,12 @@ def run_benchmark(
 
             # Empty TRAIN split handling
             if len(X_train) == 0:
-                if _is_sklearn_model(m):
+                # Models from numeric libs (sklearn, xgboost) require at least 1 train row → skip with note
+                ipath = m.import_path or ""
+                needs_fit_data = ipath.startswith("sklearn.") or ipath.startswith(
+                    "xgboost."
+                )
+                if needs_fit_data:
                     run_dir = out_root / task.task_id / m.name
                     (run_dir / "fit").mkdir(parents=True, exist_ok=True)
                     (run_dir / "predict").mkdir(parents=True, exist_ok=True)
@@ -477,11 +549,10 @@ def run_benchmark(
                         indent=2,
                     )
                     logger.info(
-                        f"[SKIP] {m.name} on {task.task_id}: empty train split — sklearn requires fit"
+                        f"[SKIP] {m.name} on {task.task_id}: empty train split — estimator requires fit data"
                     )
                     continue
-                # For PromptLearn/non-sklearn: fall through to normal fit() which can zero-shot compile from schema.
-
+                # PromptLearn / non-numeric libs can proceed zero-shot from schema
                 logger.info(
                     f"[FIT] {m.name} on {task.task_id}: empty-train; proceeding with schema-only fit"
                 )
@@ -494,7 +565,6 @@ def run_benchmark(
             run_dir.mkdir(parents=True, exist_ok=True)
             fit_dir.mkdir(parents=True, exist_ok=True)
             pred_dir.mkdir(parents=True, exist_ok=True)
-
             # Fit caching
             fit_hash_path = fit_dir / "fit_hash.json"
             model_pkl_path = fit_dir / "model.pkl"
@@ -519,32 +589,71 @@ def run_benchmark(
                 except Exception:
                     need_fit = True
 
-            if need_fit:
-                logger.info(f"[FIT] {m.name} on {task.task_id}…")
-                np.random.seed(seed)
-                est = m.build()
-                # Coerce regression targets to numeric if needed
-                if task.task_type == "regression" and not is_numeric_dtype(y_train):
-                    y_train = pd.to_numeric(y_train, errors="raise")
-                # Auto-wrap sklearn models with categorical/text preprocessing
-                est, preinfo = _maybe_wrap_preprocessor(est, m, X_train, task.task_type)
-                if hasattr(est, "set_params"):
-                    try:
-                        est.set_params(random_state=seed)
-                    except Exception:
-                        pass
-                t0 = time.time()
-                est.fit(X_train, y_train)
-                fit_s = time.time() - t0
-                joblib.dump(est, model_pkl_path)
-                json.dump(
-                    {"fit_hash": fit_hash, "fit_seconds": fit_s, "at": _now_iso()},
-                    open(fit_hash_path, "w"),
+            fit_s = 0.0
+            try:
+                if need_fit:
+                    logger.info(f"[FIT] {m.name} on {task.task_id}…")
+                    np.random.seed(seed)
+                    est = m.build()
+                    # Coerce regression targets to numeric if needed
+                    if task.task_type == "regression" and not is_numeric_dtype(y_train):
+                        y_train = pd.to_numeric(y_train, errors="raise")
+                    # Auto-wrap numeric-lib models with categorical/text preprocessing
+                    est, preinfo = _maybe_wrap_preprocessor(
+                        est, m, X_train, task.task_type
+                    )
+                    if hasattr(est, "set_params"):
+                        try:
+                            est.set_params(random_state=seed)
+                        except Exception:
+                            pass
+                    t0 = time.time()
+                    est.fit(X_train, y_train)
+                    fit_s = time.time() - t0
+                    joblib.dump(est, model_pkl_path)
+                    json.dump(
+                        {"fit_hash": fit_hash, "fit_seconds": fit_s, "at": _now_iso()},
+                        open(fit_hash_path, "w"),
+                    )
+                    logger.info(
+                        f"[FIT] done in {fit_s:.2f}s; cached → {model_pkl_path}"
+                    )
+                else:
+                    est = joblib.load(model_pkl_path)
+                    logger.info(f"[FIT] reused cache → {model_pkl_path}")
+            except Exception as e:
+                # Record NaN metrics on fit failure and continue
+                metric_keys = (
+                    ["accuracy"] if task.task_type == "classification" else ["rmse"]
                 )
-                logger.info(f"[FIT] done in {fit_s:.2f}s; cached → {model_pkl_path}")
-            else:
-                est = joblib.load(model_pkl_path)
-                logger.info(f"[FIT] reused cache → {model_pkl_path}")
+                if task.task_type == "classification" and "macro_f1" in task.metrics:
+                    metric_keys.append("macro_f1")
+                metrics_nan = {k: float("nan") for k in metric_keys}
+                json.dump(
+                    {
+                        "task_id": task.task_id,
+                        "model": m.name,
+                        "fit_seconds": fit_s,
+                        "predict_seconds": 0.0,
+                        "n_test": int(len(X_test)),
+                        "metrics": metrics_nan,
+                        "error": {"fit_error": repr(e)},
+                        "completed_at": _now_iso(),
+                    },
+                    open(metric_path, "w"),
+                    indent=2,
+                )
+                for k in metric_keys:
+                    results_long.append(
+                        {
+                            "task_id": task.task_id,
+                            "model": m.name,
+                            "metric": k,
+                            "value": np.nan,
+                        }
+                    )
+                logger.exception(f"[FIT][ERROR] {m.name} on {task.task_id}: {e}")
+                continue
 
             # Capture estimator meta (useful for PromptLearn variants)
             est_meta = {}
@@ -555,7 +664,6 @@ def run_benchmark(
                     "verbose": getattr(est, "verbose", None),
                     "max_train_rows": getattr(est, "max_train_rows", None),
                 }
-
             # Predict with resumability using CSV append (most robust)
             preds_csv = pred_dir / "predictions.csv"
             progress_path = pred_dir / "progress.json"
@@ -629,87 +737,129 @@ def run_benchmark(
                 continue
 
             # Predict & append with resumability
-            t_pred0 = time.time()
-            for start in range(0, len(remaining_idx), chunk_size):
-                end = min(start + chunk_size, len(remaining_idx))
-                sel = remaining_idx[start:end]
-                X_chunk = X_test.iloc[sel]
-                rows_chunk = all_ids[sel]
-                y_hat = est.predict(X_chunk)
-                out_df = pd.DataFrame({"row_id": rows_chunk, "y_pred": y_hat})
-                mode = "a" if preds_csv.exists() else "w"
-                header = not preds_csv.exists()
-                out_df.to_csv(preds_csv, mode=mode, header=header, index=False)
+            try:
+                t_pred0 = time.time()
+                for start in range(0, len(remaining_idx), chunk_size):
+                    end = min(start + chunk_size, len(remaining_idx))
+                    sel = remaining_idx[start:end]
+                    X_chunk = X_test.iloc[sel]
+                    rows_chunk = all_ids[sel]
+                    y_hat = est.predict(X_chunk)
+                    out_df = pd.DataFrame({"row_id": rows_chunk, "y_pred": y_hat})
+                    mode = "a" if preds_csv.exists() else "w"
+                    header = not preds_csv.exists()
+                    out_df.to_csv(preds_csv, mode=mode, header=header, index=False)
+                    json.dump(
+                        {
+                            "last_chunk_rows": int(len(out_df)),
+                            "done_rows": int(end),
+                            "total_rows": int(len(remaining_idx)),
+                            "at": _now_iso(),
+                        },
+                        open(progress_path, "w"),
+                    )
+                    logger.info(
+                        f"[PREDICT] rows {start}–{end} / {len(remaining_idx)} appended"
+                    )
+
+                t_pred = time.time() - t_pred0
+
+                # Score
+                pred_df = (
+                    pd.read_csv(preds_csv)
+                    .drop_duplicates(subset=["row_id"], keep="last")
+                    .sort_values("row_id")
+                )
+                order = np.argsort(all_ids)
+                y_true = y_test.values[order]
+                id_to_pred = dict(
+                    zip(pred_df["row_id"].astype(np.int64), pred_df["y_pred"])
+                )
+                try:
+                    y_pred = np.array([id_to_pred[int(r)] for r in all_ids[order]])
+                except KeyError as e:
+                    raise RuntimeError(
+                        "row_id mismatch between predictions and ground truth"
+                    ) from e
+
+                metrics: Dict[str, float] = {}
+                if task.task_type == "classification":
+                    from sklearn.metrics import accuracy_score, f1_score
+
+                    metrics["accuracy"] = float(accuracy_score(y_true, y_pred))
+                    if "macro_f1" in task.metrics:
+                        metrics["macro_f1"] = float(
+                            f1_score(y_true, y_pred, average="macro")
+                        )
+                elif task.task_type == "regression":
+                    y_true = y_true.astype(float)
+                    y_pred = y_pred.astype(float)
+                    metrics["rmse"] = float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
+                else:
+                    raise ValueError(f"Unsupported task_type: {task.task_type}")
+
+                metrics_obj = {
+                    "task_id": task.task_id,
+                    "model": m.name,
+                    "fit_seconds": json.load(open(fit_hash_path, "r")).get(
+                        "fit_seconds", None
+                    ),
+                    "predict_seconds": t_pred,
+                    "n_test": int(len(y_true)),
+                    "metrics": metrics,
+                    "completed_at": _now_iso(),
+                    "estimator": est_meta,
+                }
+                json.dump(metrics_obj, open(metric_path, "w"), indent=2)
+                for k, v in metrics.items():
+                    results_long.append(
+                        {
+                            "task_id": task.task_id,
+                            "model": m.name,
+                            "metric": k,
+                            "value": v,
+                        }
+                    )
+                logger.info(f"[SCORE] {m.name} on {task.task_id}: {metrics}")
+            except Exception as e:
+                # On any predict/score error: record NaN metrics and continue
+                t_pred = (time.time() - t_pred0) if "t_pred0" in locals() else 0.0
+                metric_keys = (
+                    ["accuracy"] if task.task_type == "classification" else ["rmse"]
+                )
+                if task.task_type == "classification" and "macro_f1" in task.metrics:
+                    metric_keys.append("macro_f1")
+                metrics_nan = {k: float("nan") for k in metric_keys}
                 json.dump(
                     {
-                        "last_chunk_rows": int(len(out_df)),
-                        "done_rows": int(end),
-                        "total_rows": int(len(remaining_idx)),
-                        "at": _now_iso(),
+                        "task_id": task.task_id,
+                        "model": m.name,
+                        "fit_seconds": json.load(open(fit_hash_path, "r")).get(
+                            "fit_seconds", None
+                        ),
+                        "predict_seconds": t_pred,
+                        "n_test": int(len(X_test)),
+                        "metrics": metrics_nan,
+                        "error": {"predict_or_score_error": repr(e)},
+                        "completed_at": _now_iso(),
+                        "estimator": est_meta,
                     },
-                    open(progress_path, "w"),
+                    open(metric_path, "w"),
+                    indent=2,
                 )
-                logger.info(
-                    f"[PREDICT] rows {start}–{end} / {len(remaining_idx)} appended"
-                )
-
-            t_pred = time.time() - t_pred0
-
-            # Score
-            pred_df = (
-                pd.read_csv(preds_csv)
-                .drop_duplicates(subset=["row_id"], keep="last")
-                .sort_values("row_id")
-            )
-            order = np.argsort(all_ids)
-            y_true = y_test.values[order]
-            id_to_pred = dict(
-                zip(pred_df["row_id"].astype(np.int64), pred_df["y_pred"])
-            )
-            try:
-                y_pred = np.array([id_to_pred[int(r)] for r in all_ids[order]])
-            except KeyError:
-                missing = set(all_ids) - set(pred_df["row_id"].astype(np.int64))
-                extra = set(pred_df["row_id"].astype(np.int64)) - set(all_ids)
-                raise AssertionError(
-                    f"Prediction/ground-truth row_id mismatch. Missing={len(missing)} Extra={len(extra)}. "
-                    f"Consider deleting {preds_csv} or run with resume=False"
-                )
-
-            metrics: Dict[str, float] = {}
-            if task.task_type == "classification":
-                from sklearn.metrics import accuracy_score, f1_score
-
-                metrics["accuracy"] = float(accuracy_score(y_true, y_pred))
-                if "macro_f1" in task.metrics:
-                    metrics["macro_f1"] = float(
-                        f1_score(y_true, y_pred, average="macro")
+                for k in metric_keys:
+                    results_long.append(
+                        {
+                            "task_id": task.task_id,
+                            "model": m.name,
+                            "metric": k,
+                            "value": np.nan,
+                        }
                     )
-            elif task.task_type == "regression":
-                y_true = y_true.astype(float)
-                y_pred = y_pred.astype(float)
-                metrics["rmse"] = float(np.sqrt(np.mean((y_true - y_pred) ** 2)))
-            else:
-                raise ValueError(f"Unsupported task_type: {task.task_type}")
-
-            metrics_obj = {
-                "task_id": task.task_id,
-                "model": m.name,
-                "fit_seconds": json.load(open(fit_hash_path, "r")).get(
-                    "fit_seconds", None
-                ),
-                "predict_seconds": t_pred,
-                "n_test": int(len(y_true)),
-                "metrics": metrics,
-                "completed_at": _now_iso(),
-                "estimator": est_meta,
-            }
-            json.dump(metrics_obj, open(metric_path, "w"), indent=2)
-            for k, v in metrics.items():
-                results_long.append(
-                    {"task_id": task.task_id, "model": m.name, "metric": k, "value": v}
+                logger.exception(
+                    f"[PREDICT/SCORE][ERROR] {m.name} on {task.task_id}: {e}"
                 )
-            logger.info(f"[SCORE] {m.name} on {task.task_id}: {metrics}")
+                continue
 
     # Build tables
     df_long = pd.DataFrame(results_long)

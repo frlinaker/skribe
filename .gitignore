@@ -50,3 +50,6 @@ examples/external_data
 
 # Temporary storage for resuming benchmarks
 runs/
+
+# Working docs and files
+scratch*

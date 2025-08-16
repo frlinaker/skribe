@@ -322,6 +322,87 @@ def default_models_for_task_type(task_type: str) -> List[ModelSpec]:
 # -----------------------------------------------------------------------------
 
 
+def _winner_mask(df: pd.DataFrame, primary_metric: str, higher_is_better: bool):
+    """Return a boolean DataFrame over models for the primary metric indicating per-row winners."""
+    if df is None or df.empty:
+        return None
+    if df.columns.nlevels >= 2 and (df.columns.names and "metric" in df.columns.names):
+        try:
+            vals = df.xs(primary_metric, axis=1, level="metric")
+        except KeyError:
+            return None
+    else:
+        vals = df
+    best = (
+        vals.max(axis=1, skipna=True)
+        if higher_is_better
+        else vals.min(axis=1, skipna=True)
+    )
+    return vals.eq(best, axis=0)
+
+
+def mark_winners_for_display(
+    df: pd.DataFrame,
+    primary_metric: str,
+    higher_is_better: bool,
+    marker: str = ">> ",
+    decimals: int = 4,
+) -> pd.DataFrame:
+    """Return a display-only copy of `df` with winners for `primary_metric` prepended by `marker`.
+    The underlying numeric values in `df` are not modified. Only the target metric columns are string-formatted.
+    """
+    if df is None or df.empty:
+        return df
+    mask = _winner_mask(
+        df, primary_metric=primary_metric, higher_is_better=higher_is_better
+    )
+    if mask is None:
+        return df
+    out = df.copy()
+    if df.columns.nlevels >= 2 and (df.columns.names and "metric" in df.columns.names):
+        metric_level = df.columns.names.index("metric")
+        model_level = (
+            df.columns.names.index("model")
+            if "model" in (df.columns.names or [])
+            else 0
+        )
+        target_cols = [col for col in df.columns if col[metric_level] == primary_metric]
+        for col in target_cols:
+            model_name = col[model_level]
+            winners = mask[model_name].values
+            vals = out[col].values
+
+            def _fmt(v):
+                if isinstance(v, (int, float, np.floating)) and pd.notna(v):
+                    return f"{v:.{decimals}f}"
+                return v
+
+            out[col] = [
+                (marker + _fmt(v)) if (bool(w) and pd.notna(v)) else _fmt(v)
+                for v, w in zip(vals, winners)
+            ]
+    else:
+        # Fallback for single-level columns: apply across all columns
+        if higher_is_better:
+            best = out.max(axis=1, skipna=True)
+        else:
+            best = out.min(axis=1, skipna=True)
+        for c in out.columns:
+            winners = out[c].eq(best)
+            vals = out[c].values
+
+            def _fmt(v):
+                if isinstance(v, (int, float, np.floating)) and pd.notna(v):
+                    return f"{v:.{decimals}f}"
+                return v
+
+            out[c] = [
+                (marker + _fmt(v)) if (bool(w) and pd.notna(v)) else _fmt(v)
+                for v, w in zip(vals, winners)
+            ]
+    return out
+
+
 def _now_iso() -> str:
     return datetime.utcnow().replace(microsecond=0).isoformat() + "Z"
 

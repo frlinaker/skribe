@@ -47,3 +47,6 @@ htmlcov/
 
 # External datasets, like from Kaggle
 examples/external_data
+
+# Temporary storage for resuming benchmarks
+runs/

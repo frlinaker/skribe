@@ -26,3 +26,4 @@ pre-commit>=3.7
 pyarrow>=15.0
 
 xgboost>=2.0.0
+shap>=0.40.0

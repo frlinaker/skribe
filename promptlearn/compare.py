@@ -175,10 +175,15 @@ def _shap_importance(model, X_sample: pd.DataFrame) -> Optional[pd.Series]:
 
     def predict_fn(arr):
         df = pd.DataFrame(arr, columns=col_names)
-        # Re-map numeric columns back to float, categorical back to original strings
-        for i, c in enumerate(cat):
-            col_idx = col_names.index(c)
-            df[c] = enc.inverse_transform(df[[c]].clip(-1, len(enc.categories_[i]) - 1).astype(int))
+        if cat:
+            # Re-map categorical columns back to original strings via inverse_transform.
+            # Must pass the full cat sub-frame at once so column count matches the encoder.
+            cat_sub = df[cat].clip(-1).astype(int)
+            for i, c in enumerate(cat):
+                cat_sub[c] = cat_sub[c].clip(-1, len(enc.categories_[i]) - 1)
+            decoded = enc.inverse_transform(cat_sub)
+            for j, c in enumerate(cat):
+                df[c] = decoded[:, j]
         return np.asarray(model.predict(df), dtype=float)
 
     with warnings.catch_warnings():

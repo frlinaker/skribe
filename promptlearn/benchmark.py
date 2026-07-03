@@ -154,7 +154,7 @@ def default_models_for_task_type(task_type: str) -> List[ModelSpec]:
     llm_variants = (
         [s.strip() for s in llm_env.split(",") if s.strip()]
         if llm_env
-        else ([] if disable_llm else ["gpt-4o", "gpt-5"])
+        else ([] if disable_llm else ["gpt-5.4-mini", "gpt-5.5"])
     )
 
     def _try_add(name: str, import_path: str, **params):

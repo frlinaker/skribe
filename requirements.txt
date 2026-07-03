@@ -1,4 +1,4 @@
-openai
+litellm
 scikit-learn
 pandas
 numpy

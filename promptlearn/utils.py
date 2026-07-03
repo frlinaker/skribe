@@ -37,6 +37,19 @@ def generate_feature_dicts(X, feature_names):
         raise ValueError("X must be a DataFrame or ndarray.")
 
 
+def sanitize_dataset_description(text: str) -> str:
+    """Clean user-supplied dataset description before embedding it in an LLM prompt.
+
+    Strips leading/trailing whitespace, removes curly braces (which would break
+    prompt template substitution), and collapses internal whitespace runs.
+    Prompt injection cannot be fully prevented, but we avoid making it worse.
+    """
+    text = text.strip()
+    text = text.replace("{", "").replace("}", "")
+    text = re.sub(r"[ \t]+", " ", text)
+    return text
+
+
 def extract_python_code(text: str) -> str:
     # Remove code fences and cut at any obvious example markers
     if "```python" in text:
@@ -72,20 +85,25 @@ def prepare_training_data(X, y):
     return data, feature_names, target_name
 
 
-def make_predict_fn(code: str):
+def make_predict_fn(code: str, fn_names=("predict", "transform")):
+    """Exec LLM-generated code and return the entry-point function.
+
+    Looks for a function named ``predict`` (estimators) or ``transform``
+    (the feature engineer), in that order.
+    """
     # Use a shared dictionary for globals/locals
     local_vars = {}
     try:
         exec(code, local_vars, local_vars)
     except Exception as e:
         raise ValueError(f"Could not exec LLM code: {e}\nCode was:\n{code}")
-    # Look for 'predict' function
-    fn = local_vars.get("predict", None)
-    if not callable(fn):
-        raise ValueError(
-            "No valid function named 'predict' or any callable found in LLM output."
-        )
-    return fn
+    for name in fn_names:
+        fn = local_vars.get(name, None)
+        if callable(fn):
+            return fn
+    raise ValueError(
+        "No valid function named 'predict' or any callable found in LLM output."
+    )
 
 
 def safe_exec_fn(
@@ -125,7 +143,7 @@ def safe_exec_fn(
         return default
 
 
-# For compatibility with previous usage:
+# Typed convenience wrappers around safe_exec_fn.
 def safe_predict(fn: Callable, features: dict) -> int:
     return safe_exec_fn(fn, features, output_type=int, default=0, label="PredictFn")
 

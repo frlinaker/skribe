@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import joblib
 import os
-import sys
 import tempfile
 
 from promptlearn.classifier import PromptClassifier
@@ -107,23 +106,67 @@ def test_joblib_save_load(sample_Xy):
         assert len(preds) == len(y)
 
 
-def test_missing_api_key(monkeypatch):
-    # Remove env var and force reload
+def test_construction_does_not_require_api_key(monkeypatch):
+    """Credentials are resolved lazily per-provider by litellm at call time,
+    so constructing an estimator must not require any API key."""
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    import importlib
-    import promptlearn.base
-
-    importlib.reload(promptlearn.base)
-    with pytest.raises(RuntimeError):
-        PromptClassifier()
+    clf = PromptClassifier()
+    assert clf.predict_fn is None
 
 
-def test_importerror_openai(monkeypatch):
-    """Test missing openai dependency error path."""
-    # Patch sys.modules to simulate openai missing
-    monkeypatch.setitem(sys.modules, "openai", None)
-    with pytest.raises(ImportError):
-        clf = PromptClassifier(model="gpt-4o")
+def test_fit_retries_then_succeeds(monkeypatch):
+    """A function that errors when run on the sample is retried, then accepted."""
+    clf = PromptClassifier(max_retries=2)
+    monkeypatch.setattr(clf, "_extend_code", lambda code: code)
+    outputs = iter(
+        [
+            "def predict(**features): raise ValueError('boom')",  # compiles, fails at run
+            "def predict(**features): return 0",  # valid
+        ]
+    )
+    monkeypatch.setattr(
+        clf, "_call_llm", lambda prompt, web_search=False: next(outputs)
+    )
+    X = pd.DataFrame({"a": [1, 2, 3]})
+    y = pd.Series([0, 1, 0], name="target")
+    clf.fit(X, y)
+    assert clf.predict_fn is not None
+    assert clf.predict_fn(a=5) == 0
+
+
+def test_fit_feedback_includes_error(monkeypatch):
+    """The retry prompt carries the previous error message back to the LLM."""
+    clf = PromptClassifier(max_retries=1)
+    monkeypatch.setattr(clf, "_extend_code", lambda code: code)
+    prompts = []
+    outputs = iter(
+        [
+            "def predict(**features): raise ValueError('kaboom')",
+            "def predict(**features): return 1",
+        ]
+    )
+
+    def fake_llm(prompt, web_search=False):
+        prompts.append(prompt)
+        return next(outputs)
+
+    monkeypatch.setattr(clf, "_call_llm", fake_llm)
+    clf.fit(pd.DataFrame({"a": [1]}), pd.Series([1], name="target"))
+    assert len(prompts) == 2
+    assert "kaboom" in prompts[1]
+
+
+def test_fit_raises_after_exhausting_retries(monkeypatch):
+    """When every attempt fails validation, the last error is surfaced."""
+    clf = PromptClassifier(max_retries=1)
+    monkeypatch.setattr(clf, "_extend_code", lambda code: code)
+    monkeypatch.setattr(
+        clf,
+        "_call_llm",
+        lambda prompt, web_search=False: "def predict(**features): raise ValueError('always broken')",
+    )
+    with pytest.raises(ValueError, match="always broken"):
+        clf.fit(pd.DataFrame({"a": [1, 2]}), pd.Series([0, 1], name="target"))
 
 
 def test_setstate_broken_code(monkeypatch):
@@ -155,7 +198,9 @@ def test_fit_too_many_rows(monkeypatch):
     y = pd.Series(np.arange(10), name="target")
     # Patch _call_llm to return a stub function
     monkeypatch.setattr(
-        clf, "_call_llm", lambda prompt: "def predict(**features): return 0"
+        clf,
+        "_call_llm",
+        lambda prompt, web_search=False: "def predict(**features): return 0",
     )
     # Now .fit should use the patched function
     clf.fit(X, y)
@@ -167,7 +212,7 @@ def test_fit_blank_llm_output(monkeypatch):
     clf = PromptClassifier()
     X = pd.DataFrame({"a": [1, 2, 3]})
     y = pd.Series([1, 2, 3], name="target")
-    monkeypatch.setattr(clf, "_call_llm", lambda prompt: "   \n   ")
+    monkeypatch.setattr(clf, "_call_llm", lambda prompt, web_search=False: "   \n   ")
     with pytest.raises(ValueError, match="No code to exec from LLM output"):
         clf.fit(X, y)
 
@@ -186,7 +231,7 @@ def test_fit_nonstring_llm_output(monkeypatch):
     clf = PromptClassifier()
     X = pd.DataFrame({"a": [1, 2, 3]})
     y = pd.Series([1, 2, 3], name="target")
-    monkeypatch.setattr(clf, "_call_llm", lambda prompt: 12345)
+    monkeypatch.setattr(clf, "_call_llm", lambda prompt, web_search=False: 12345)
     # Expect ValueError because the LLM output isn't code
     with pytest.raises(ValueError, match="No valid function named 'predict'"):
         clf.fit(X, y)
@@ -198,7 +243,9 @@ def test_sample_calls_llm_and_parses(monkeypatch):
     # Patch _call_llm to return a simple TSV
     clf.feature_names_ = ["x1"]
     clf.target_name_ = "y"
-    monkeypatch.setattr(clf, "_call_llm", lambda prompt: "a\tb\n1\t2\n3\t4")
+    monkeypatch.setattr(
+        clf, "_call_llm", lambda prompt, web_search=False: "a\tb\n1\t2\n3\t4"
+    )
     df = clf.sample(2)
     assert isinstance(df, pd.DataFrame)
     assert set(df.columns) == {"a", "b"}
@@ -293,7 +340,9 @@ def test_sample_generates_examples(monkeypatch):
     clf.python_code_ = "def predict(foo, bar): return 1"
     # Patch LLM call to return TSV
     monkeypatch.setattr(
-        clf, "_call_llm", lambda prompt: "foo\tbar\tbaz\n1\t2\t3\n4\t5\t6"
+        clf,
+        "_call_llm",
+        lambda prompt, web_search=False: "foo\tbar\tbaz\n1\t2\t3\n4\t5\t6",
     )
     df = clf.sample(2)
     assert isinstance(df, pd.DataFrame)
@@ -352,3 +401,41 @@ def test_safe_exec_fn_non_number_string():
 
     # Should fall back to default (0) because int("not_a_number") fails
     assert safe_exec_fn(fn, {"val": "not_a_number"}) == 0
+
+
+# ---------------------------------------------------------------------------
+# Signature and class-coverage validation (regression for commit 20ad44d)
+# ---------------------------------------------------------------------------
+
+
+def test_fit_rejects_positional_arg_missing_feature(monkeypatch):
+    """predict() with fixed args that omit an expected feature must trigger a retry
+    and ultimately raise with a clear message naming the missing argument."""
+    clf = PromptClassifier(model="gpt-5.4-mini", verbose=False, max_retries=0)
+    # Returns a function that only accepts 'age', missing 'income'
+    monkeypatch.setattr(
+        clf, "_call_llm", lambda p, web_search=False: "def predict(age): return 0"
+    )
+    monkeypatch.setattr(clf, "_extend_code", lambda code: code)
+
+    with pytest.raises(ValueError, match="missing expected feature arguments"):
+        clf.fit(
+            pd.DataFrame({"age": [25, 40], "income": [30000, 80000]}),
+            pd.Series([0, 1]),
+        )
+
+
+
+def test_fit_kwargs_signature_passes_validation(monkeypatch):
+    """predict(**features) always passes the signature check regardless of column names."""
+    clf = PromptClassifier(model="gpt-5.4-mini", verbose=False, max_retries=0)
+    monkeypatch.setattr(
+        clf,
+        "_call_llm",
+        lambda p, web_search=False: "def predict(**features): return int(features.get('a', 0) > 10)",
+    )
+    monkeypatch.setattr(clf, "_extend_code", lambda code: code)
+
+    X = pd.DataFrame({"a": list(range(20))})
+    y = pd.Series([0] * 10 + [1] * 10)
+    clf.fit(X, y)  # must not raise

@@ -1,0 +1,16 @@
+# Run `pre-commit install` once to enable. Both hooks must pass before a commit
+# is allowed. Bypass in emergencies with `git commit --no-verify`.
+repos:
+  - repo: https://github.com/psf/black-pre-commit-mirror
+    rev: 26.5.1
+    hooks:
+      - id: black
+
+  - repo: local
+    hooks:
+      - id: pytest
+        name: pytest (full suite must pass)
+        entry: .venv/bin/python -m pytest
+        language: system
+        pass_filenames: false
+        always_run: true

@@ -13,14 +13,14 @@ promptlearn treats the LLM as a **one-time code synthesizer**: at `fit()` the LL
 ## Closest prior work
 
 ### FeatLLM
-Han et al., "FeatLLM: Leveraging Large Language Models for Feature-Oriented Tabular Data Augmentation", arXiv 2404.09491, ICML 2024.
+Han et al., "Large Language Models Can Automatically Engineer Features for Few-Shot Tabular Learning", [arXiv 2404.09491](https://arxiv.org/abs/2404.09491), ICML 2024.
 
 The closest single prior work to promptlearn's core idea. FeatLLM generates Python functions (`extracting_features_no(df_input)`) that apply if/elif-style lambda conditions to create binary feature columns. No LLM is called at inference — the generated functions run as a feature transformation step. Feature names are the semantic hook: the LLM sees column names like `Age`, `Sex` and writes threshold rules directly referencing them.
 
 **Key difference:** FeatLLM generates *feature engineering functions* (transformations to binary columns), then trains a separate linear classifier on top of the engineered features. The generated code is not the entire predictor. Not sklearn-compatible (`BaseEstimator`). No context pre-pass, extend pass, error-feedback retry, SHAP explain, or joblib serialization.
 
 ### CAAFE
-Hollmann et al., "CAAFE: Context-Aware Automated Feature Engineering", arXiv 2305.03403, NeurIPS 2023.
+Hollmann et al., "Large Language Models for Automated Data Science: Introducing CAAFE for Context-Aware Automated Feature Engineering", [arXiv 2305.03403](https://arxiv.org/abs/2305.03403), NeurIPS 2023.
 
 LLM iteratively generates Python code for new feature columns, guided by cross-validation feedback. The generated code is feature transformation code; a separate sklearn classifier (default: TabPFN) does the actual prediction and runs at every inference. Provides a `CAAFEClassifier` sklearn wrapper.
 
@@ -29,26 +29,26 @@ CAAFE was the first to explicitly identify the feature-name semantic gap that Au
 **Key difference:** CAAFE requires a downstream classifier at inference. The LLM is not called at inference but the sklearn model is. No standalone predict function; no context pre-pass; no code-string serialization.
 
 ### OCTree
-Nam et al., "OCTree: Optimized Tabular Feature Generation via LLM", arXiv 2406.08527, NeurIPS 2024.
+Nam et al., "Optimized Feature Generation for Tabular Data via LLMs with Decision Tree Reasoning", [arXiv 2406.08527](https://arxiv.org/abs/2406.08527), NeurIPS 2024.
 
 LLM generates new feature column rules guided by decision-tree reasoning feedback from prior iterations. Same paradigm as CAAFE: feature engineering code plus a separate tree-based downstream model.
 
 ### Talking Trees
-Yandex Research, "Talking Trees: LLM-guided decision tree induction from tabular data", arXiv 2509.21465, 2025.
+Yandex Research, "Talking Trees: Reasoning-Assisted Induction of Decision Trees for Tabular Data", [arXiv 2509.21465](https://arxiv.org/abs/2509.21465), 2025.
 
 An LLM agent constructs a decision tree at training time using a tool loop. Inference is LLM-free — just feature comparisons on the tree. Feature names and descriptions are given to the LLM, so it can apply prior knowledge when selecting splits. Sklearn tree conversion is supported.
 
 **Key difference:** The artifact is a decision tree object, not a Python code string. Cannot represent arbitrary scoring logic, lookup tables, or multi-feature interactions the way a generated `predict()` function can. No context pre-pass, no extend pass, no SHAP explain, no regression support.
 
 ### "From Stochastic Answers to Verifiable Reasoning"
-arXiv 2603.13287, 2026.
+"From Stochastic Answers to Verifiable Reasoning: Interpretable Decision-Making with LLM-Generated Code", [arXiv 2603.13287](https://arxiv.org/abs/2603.13287), 2026.
 
 LLM generates Python lambda expressions encoding binary classification rules over structured dictionaries, then feeds them into logistic regression. No LLM at inference; field names are the semantic hooks.
 
 **Key difference:** Domain-specific (founder screening). The generated code is a set of lambda rules feeding into logistic regression, not a standalone predict function. Not sklearn-compatible. No fit/predict API, no context pre-pass, no serialization.
 
 ### SemPipes
-Ovcharenko et al., "SemPipes: Semantically-Guided Pipeline Synthesis", arXiv 2602.05134, 2026.
+Ovcharenko et al., "SemPipes: Optimizable Semantic Data Operators for Tabular Machine Learning Pipelines", [arXiv 2602.05134](https://arxiv.org/abs/2602.05134), 2026.
 
 LLM synthesizes Python implementations of semantic data operators declared in natural language, guided by MCTS evolutionary search. Generates sklearn-pipeline-compatible operator implementations.
 
@@ -60,14 +60,14 @@ LLM synthesizes Python implementations of semantic data operators declared in na
 
 All of the following call the LLM on every inference row. They are the dominant prior paradigm and represent the tradeoff that promptlearn specifically avoids.
 
-- **LIFT** — Wang et al., NeurIPS 2022. Fine-tunes LLM to predict tabular labels; LLM runs at inference.
-- **TABLET** — Slack et al., arXiv 2304.13188. LLM called per row with natural-language instructions.
-- **TabLLM** — Hegselmann et al. Row serialized to text; LLM called per row.
-- **UniPredict** — arXiv 2310.03266. LLM maps rows to class probabilities via text generation.
-- **Scikit-LLM** — PyPI `scikit-llm`. Sklearn `fit`/`predict` API wrapping GPT-4; every `.predict()` is an LLM API call.
+- **LIFT** — Dinh, Zeng et al., "LIFT: Language-Interfaced Fine-Tuning for Non-language Machine Learning Tasks", [NeurIPS 2022](https://proceedings.nips.cc/paper_files/paper/2022/hash/4ce7fe1d2730f53cb3857032952cd1b8-Abstract-Conference.html). Fine-tunes LLM to predict tabular labels; LLM runs at inference.
+- **TABLET** — Slack et al., "TABLET: Learning From Instructions For Tabular Data", [arXiv 2304.13188](https://arxiv.org/abs/2304.13188). LLM called per row with natural-language instructions.
+- **TabLLM** — Hegselmann et al., "TabLLM: Few-shot Classification of Tabular Data with Large Language Models", [arXiv 2210.10723](https://arxiv.org/abs/2210.10723), AISTATS 2023. Row serialized to text; LLM called per row.
+- **UniPredict** — "UniPredict: Large Language Models are Universal Tabular Classifiers", [arXiv 2310.03266](https://arxiv.org/abs/2310.03266). LLM maps rows to class probabilities via text generation.
+- **Scikit-LLM** — [github.com/iryna-kondr/scikit-llm](https://github.com/iryna-kondr/scikit-llm), [PyPI](https://pypi.org/project/scikit-llm/). Sklearn `fit`/`predict` API wrapping GPT-4; every `.predict()` is an LLM API call.
 
 ### TabPFN
-Hollmann et al., arXiv 2207.01848 (ICLR 2023); v2 in Nature 2025.
+Hollmann et al., [arXiv 2207.01848](https://arxiv.org/abs/2207.01848) (ICLR 2023); v2: "Accurate predictions on small data with a tabular foundation model", [Nature 637:319–326, 2025](https://www.nature.com/articles/s41586-024-08328-6).
 
 Transformer pre-trained on synthetic data; uses in-context learning at inference (the entire training set is passed as context for each test batch). No LLM call but requires running a neural network with O(n²) complexity in training rows. Not code synthesis. Not a compiled Python function. Strong baseline across small tabular datasets.
 
@@ -75,9 +75,9 @@ Transformer pre-trained on synthetic data; uses in-context learning at inference
 
 ## Symbolic regression and program synthesis
 
-- **PySR** — Cranmer, 2023. Evolves symbolic mathematical expressions using genetic programming. Outputs sklearn-compatible `PySRRegressor`/`PySRClassifier`. Generates code (sympy expressions exportable to Python/C). No LLM; uses evolutionary search, not world knowledge. Cannot handle named categorical features or semantic domain knowledge.
-- **TPOT** — AutoML using genetic programming to optimize sklearn pipelines. Selects and chains sklearn primitives; no predict-logic code generation.
-- **LaSR** — 2024. Combines LLM suggestions with PySR's evolutionary search for symbolic regression. Targets numeric regression formulas, not if/elif classification logic on named categorical features.
+- **PySR** — Cranmer, [github.com/MilesCranmer/PySR](https://github.com/MilesCranmer/PySR), 2023. Evolves symbolic mathematical expressions using genetic programming. Outputs sklearn-compatible `PySRRegressor`/`PySRClassifier`. Generates code (sympy expressions exportable to Python/C). No LLM; uses evolutionary search, not world knowledge. Cannot handle named categorical features or semantic domain knowledge.
+- **TPOT** — [github.com/EpistasisLab/tpot](https://github.com/EpistasisLab/tpot). AutoML using genetic programming to optimize sklearn pipelines. Selects and chains sklearn primitives; no predict-logic code generation.
+- **LaSR** — Grayeli et al., "Symbolic Regression with a Learned Concept Library", [arXiv 2409.09359](https://arxiv.org/abs/2409.09359), 2024. Combines LLM suggestions with PySR's evolutionary search for symbolic regression. Targets numeric regression formulas, not if/elif classification logic on named categorical features.
 
 ---
 
@@ -127,9 +127,9 @@ SHAP KernelExplainer over the compiled predict function, with LLM-generated narr
 
 When writing a paper or extended README, these are the works that should be cited as the most relevant prior art:
 
-- FeatLLM (arXiv 2404.09491) — closest to the code-synthesis idea; credit for LLM-generated Python functions from tabular data
-- CAAFE (arXiv 2305.03403) — credit for identifying the feature-name semantic gap in AutoML
-- TabPFN (arXiv 2207.01848) — the strongest baseline on small tabular datasets; important to benchmark against
-- Talking Trees (arXiv 2509.21465) — LLM-at-train-time, inference-free, but tree artifact
-- Scikit-LLM — the most prominent prior sklearn-API LLM wrapper; contrast case for inference cost
-- PySR — sklearn-compatible code synthesis via evolution; contrast case for non-LLM program synthesis
+- FeatLLM ([arXiv 2404.09491](https://arxiv.org/abs/2404.09491)) — closest to the code-synthesis idea; credit for LLM-generated Python functions from tabular data
+- CAAFE ([arXiv 2305.03403](https://arxiv.org/abs/2305.03403)) — credit for identifying the feature-name semantic gap in AutoML
+- TabPFN ([arXiv 2207.01848](https://arxiv.org/abs/2207.01848)) — the strongest baseline on small tabular datasets; important to benchmark against
+- Talking Trees ([arXiv 2509.21465](https://arxiv.org/abs/2509.21465)) — LLM-at-train-time, inference-free, but tree artifact not Python code
+- Scikit-LLM ([GitHub](https://github.com/iryna-kondr/scikit-llm)) — the most prominent prior sklearn-API LLM wrapper; contrast case for inference cost
+- PySR ([GitHub](https://github.com/MilesCranmer/PySR)) — sklearn-compatible code synthesis via evolution; contrast case for non-LLM program synthesis

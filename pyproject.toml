@@ -2,6 +2,41 @@
 requires = ["setuptools>=42", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[project]
+name = "skribe"
+dynamic = ["version"]
+description = "LLM-powered estimators that inscribe prediction logic as standalone Python functions"
+readme = "README.md"
+license = "MIT"
+authors = [
+    { name = "Fredrik Linaker", email = "fredrik.linaker@gmail.com" },
+]
+requires-python = ">=3.8"
+dependencies = [
+    "scikit-learn",
+    "litellm",
+    "pandas",
+    "numpy",
+    "joblib",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Intended Audience :: Developers",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.urls]
+Homepage = "https://github.com/frlinaker/skribe"
+
+[project.scripts]
+skribe = "skribe.cli:main"
+
+[tool.setuptools.dynamic]
+version = { attr = "skribe.version.__version__" }
+
+[tool.setuptools.packages.find]
+exclude = ["tests", "tests.*", "examples", "examples.*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 

@@ -74,3 +74,4 @@ artifacts/
 
 # Claude Code settings (per-machine; not shared)
 .claude/
+tmp/

@@ -1,6 +1,6 @@
 """
 Compact benchmark runner for scikit‑learn-compatible estimators with resumability.
-V1: no CLI, few deps, sensible defaults, and PromptLearn support by default.
+V1: no CLI, few deps, sensible defaults, and Skribe support by default.
 """
 
 from __future__ import annotations
@@ -77,17 +77,17 @@ class ModelSpec:
             try:
                 est = Est(model=hint, **params)
                 logger.info(
-                    f"[PromptLearn] instantiated with model='{hint}' for {self.name}"
+                    f"[Skribe] instantiated with model='{hint}' for {self.name}"
                 )
                 return est
             except TypeError:
                 logger.warning(
-                    "[PromptLearn] Could not pass model hint via model=; falling back to default constructor"
+                    "[Skribe] Could not pass model hint via model=; falling back to default constructor"
                 )
         return Est(**params)
 
 
-# --- PromptLearn factory (lean) -----------------------------------------------
+# --- Skribe factory (lean) -----------------------------------------------
 
 
 def make_sklearn(name: str, import_path: str, **params) -> ModelSpec:
@@ -97,7 +97,7 @@ def make_sklearn(name: str, import_path: str, **params) -> ModelSpec:
 def make_skribe(
     kind: str = "classifier", name: Optional[str] = None, **params
 ) -> Optional[ModelSpec]:
-    """Return a ModelSpec for the canonical PromptLearn estimators, if installed.
+    """Return a ModelSpec for the canonical Skribe estimators, if installed.
     We rely on the top-level symbols exported by `skribe.__init__`:
       - skribe.SkribeClassifier
       - skribe.SkribeRegressor
@@ -110,11 +110,11 @@ def make_skribe(
         if kind == "classifier":
             getattr(mod, "SkribeClassifier")  # raises AttributeError if missing
             ip = "skribe.SkribeClassifier"
-            default_name = "PromptLearnClf"
+            default_name = "SkribeClf"
         else:
             getattr(mod, "SkribeRegressor")
             ip = "skribe.SkribeRegressor"
-            default_name = "PromptLearnReg"
+            default_name = "SkribeReg"
         return ModelSpec(name or default_name, ip, params)
     except Exception:
         return None
@@ -123,9 +123,9 @@ def make_skribe(
 def make_skribe_variant(
     kind: str, llm_name: str, name: Optional[str] = None, **params
 ) -> Optional[ModelSpec]:
-    """Create a PromptLearn ModelSpec variant pinned to a specific LLM/backend.
+    """Create a Skribe ModelSpec variant pinned to a specific LLM/backend.
     We attach a private param `__pl_model_hint__` that `ModelSpec.build()` uses to
-    pass `model=llm_name` to the PromptLearn estimator constructor when possible.
+    pass `model=llm_name` to the Skribe estimator constructor when possible.
     """
     base = make_skribe(kind=kind, name=None, **params)
     if base is None:
@@ -133,9 +133,9 @@ def make_skribe_variant(
     new_params = dict(base.params)
     new_params["__pl_model_hint__"] = llm_name
     display = name or (
-        "PromptLearnClf[" + llm_name + "]"
+        "SkribeClf[" + llm_name + "]"
         if kind == "classifier"
-        else "PromptLearnReg[" + llm_name + "]"
+        else "SkribeReg[" + llm_name + "]"
     )
     return dataclasses.replace(base, name=display, params=new_params)
 
@@ -190,7 +190,7 @@ def default_models_for_task_type(task_type: str) -> List[ModelSpec]:
         if not disable_llm:
             for llm in llm_variants:
                 pl = make_skribe_variant(
-                    "classifier", llm, name=f"PromptLearnClf[{llm}]"
+                    "classifier", llm, name=f"SkribeClf[{llm}]"
                 )
                 if pl:
                     models.append(pl)
@@ -217,7 +217,7 @@ def default_models_for_task_type(task_type: str) -> List[ModelSpec]:
         if not disable_llm:
             for llm in llm_variants:
                 pl = make_skribe_variant(
-                    "regressor", llm, name=f"PromptLearnReg[{llm}]"
+                    "regressor", llm, name=f"SkribeReg[{llm}]"
                 )
                 if pl:
                     models.append(pl)

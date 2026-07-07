@@ -119,7 +119,7 @@ def load_cache_results(
             logger.warning("Failed to read %s: %s", path, e)
             continue
 
-        # Promptlearn files contain dataset / model_id at the top level.
+        # Skribe files contain dataset / model_id at the top level.
         dataset_name = data.get("dataset")
         model_id = data.get("model_id")
 

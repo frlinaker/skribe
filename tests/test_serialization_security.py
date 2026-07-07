@@ -12,9 +12,9 @@ import io
 import joblib
 import pandas as pd
 
-from promptlearn.classifier import PromptClassifier
-from promptlearn.regressor import PromptRegressor
-from promptlearn.explain import Explanation
+from skribe.classifier import SkribeClassifier
+from skribe.regressor import SkribeRegressor
+from skribe.explain import Explanation
 
 # A sentinel that looks like a real key; placed in the environment so that, if
 # anything captured the key, it would show up verbatim in the dump.
@@ -37,11 +37,11 @@ ALLOWED_STATE_FIELDS = {
     "explanation_",
     "context_summary_",
     "context_prepass_prompt_",
-    "new_feature_names_",  # PromptFeatureEngineer
+    "new_feature_names_",  # SkribeFeatureEngineer
 }
 
 
-def _fitted(cls=PromptClassifier):
+def _fitted(cls=SkribeClassifier):
     """A fitted-looking estimator (incl. a cached explanation) with no network."""
     est = cls()
     est.feature_names_ = ["age"]
@@ -105,7 +105,7 @@ def test_joblib_dump_contains_no_credentials(monkeypatch):
 
 def test_regressor_dump_contains_no_credentials(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", SECRET)
-    est = _fitted(cls=PromptRegressor)
+    est = _fitted(cls=SkribeRegressor)
 
     buffer = io.BytesIO()
     joblib.dump(est, buffer)

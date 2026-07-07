@@ -1,26 +1,26 @@
 # Changelog
 
-All notable changes to promptlearn are documented here.
+All notable changes to skribe are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
 ## [0.5.0] — 2026-06-23 — feature engineering & benchmarks
 ### Added
-- `PromptFeatureEngineer`: a scikit-learn `TransformerMixin` that uses the LLM
+- `SkribeFeatureEngineer`: a scikit-learn `TransformerMixin` that uses the LLM
   to generate a standalone `transform()` function deriving new, world-knowledge-
   rich features from semantically meaningful columns. It validates/retries the
   generated code like the estimators, makes no per-row LLM calls, appends the
   engineered columns, and drops into a `Pipeline` before any classical model
-- Benchmark harness (`benchmarks/run_openml_benchmark.py`) comparing promptlearn,
-  promptlearn + feature engineering, logistic regression, and XGBoost across 10
+- Benchmark harness (`benchmarks/run_openml_benchmark.py`) comparing skribe,
+  skribe + feature engineering, logistic regression, and XGBoost across 10
   OpenML datasets, with a JSON results cache. Results published in the README:
-  on `gpt-5.5`, `PromptFeatureEngineer` + logistic regression reaches 0.937 mean
+  on `gpt-5.5`, `SkribeFeatureEngineer` + logistic regression reaches 0.937 mean
   accuracy — ahead of XGBoost (0.925) and plain logistic regression (0.878)
 
 ### Changed
 - Extracted the code-generation + validation/retry loop into
-  `BasePromptEstimator._generate_code`, now shared by the estimators and the
+  `BaseSkribeEstimator._generate_code`, now shared by the estimators and the
   feature engineer; `make_predict_fn` resolves a `predict` or `transform` entry
   point
 - `compare_models` passes pre-built `Pipeline` instances through untouched, so a
@@ -30,7 +30,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [0.4.1] — 2026-06-23 — packaging & test ergonomics
 ### Added
-- `PROMPTLEARN_MODEL` environment variable to override the default model
+- `SKRIBE_MODEL` environment variable to override the default model
   without code changes (an explicit `model=` argument still wins). The test
   suite uses it to run the live-LLM gate against a fast, cheap model
 
@@ -41,7 +41,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ### Fixed
 - Packaging no longer ships the `tests` (or `examples`) directory as an
-  installable top-level package; only `promptlearn` is published
+  installable top-level package; only `skribe` is published
 - Added a `MANIFEST.in` that keeps local-only and secret-bearing files
   (`.env`, `.envrc`, `.cursorrules`, `.claude/`) out of the source distribution
 
@@ -63,7 +63,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   `NotFittedError` (#3)
 
 - `compare_models(models, X_train, y_train, X_test, y_test)` helper that fits
-  any mix of promptlearn and sklearn/XGBoost estimators on one dataset and
+  any mix of skribe and sklearn/XGBoost estimators on one dataset and
   returns a side-by-side metrics table plus a row-by-row predictions table
 
 ### Changed
@@ -152,8 +152,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [0.1.0] — initial release
 ### Added
-- `PromptClassifier` — sklearn-compatible classifier backed by LLM reasoning
-- `PromptRegressor` — sklearn-compatible regressor backed by LLM reasoning
+- `SkribeClassifier` — sklearn-compatible classifier backed by LLM reasoning
+- `SkribeRegressor` — sklearn-compatible regressor backed by LLM reasoning
 - Zero-row fitting: pass column names only, model infers from world knowledge
 - `.sample(n)` method for generating synthetic rows from the fitted heuristic
 - `joblib` serialization support (LLM client excluded, heuristic preserved)

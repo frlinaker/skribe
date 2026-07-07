@@ -1,4 +1,4 @@
-"""Tests for the promptlearn CLI (no LLM calls — mocks the estimators)."""
+"""Tests for the skribe CLI (no LLM calls — mocks the estimators)."""
 
 import textwrap
 from pathlib import Path
@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from promptlearn.cli import main
+from skribe.cli import main
 
 
 @pytest.fixture()
@@ -64,14 +64,14 @@ def test_fit_missing_target(iris_csv):
 
 
 def test_fit_classification(iris_csv):
-    with patch("promptlearn.cli.PromptClassifier") as MockClf:
+    with patch("skribe.cli.SkribeClassifier") as MockClf:
         MockClf.return_value = _mock_classifier()
         rc = main(["fit", str(iris_csv), "--target", "species", "--test-size", "0.2"])
     assert rc == 0
 
 
 def test_fit_regression(regression_csv):
-    with patch("promptlearn.cli.PromptRegressor") as MockReg:
+    with patch("skribe.cli.SkribeRegressor") as MockReg:
         MockReg.return_value = _mock_regressor()
         rc = main(
             [
@@ -89,7 +89,7 @@ def test_fit_regression(regression_csv):
 
 
 def test_fit_no_test_split(iris_csv):
-    with patch("promptlearn.cli.PromptClassifier") as MockClf:
+    with patch("skribe.cli.SkribeClassifier") as MockClf:
         MockClf.return_value = _mock_classifier()
         rc = main(["fit", str(iris_csv), "--target", "species", "--test-size", "0"])
     assert rc == 0

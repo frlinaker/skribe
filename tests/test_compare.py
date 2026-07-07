@@ -1,4 +1,4 @@
-"""Tests for promptlearn.compare_models and explain_comparison (offline)."""
+"""Tests for skribe.compare_models and explain_comparison (offline)."""
 
 import numpy as np
 import pandas as pd
@@ -6,13 +6,13 @@ import pytest
 from sklearn.dummy import DummyClassifier, DummyRegressor
 from sklearn.linear_model import LinearRegression, LogisticRegression
 
-from promptlearn.base import BasePromptEstimator
-from promptlearn.compare import compare_models, explain_comparison, _infer_task
-from promptlearn.explain import Explanation
+from skribe.base import BaseSkribeEstimator
+from skribe.compare import compare_models, explain_comparison, _infer_task
+from skribe.explain import Explanation
 
 
-class _DummyPrompt(BasePromptEstimator):
-    """A promptlearn estimator that records the columns it was fitted on, so we
+class _DummyPrompt(BaseSkribeEstimator):
+    """A skribe estimator that records the columns it was fitted on, so we
     can verify it receives the RAW frame (no one-hot wrapping)."""
 
     def __init__(self):
@@ -74,8 +74,8 @@ def test_compare_regression_uses_regression_metrics():
     assert metrics.loc["linreg", "rmse"] < 1e-6
 
 
-def test_promptlearn_estimator_gets_raw_columns():
-    """A promptlearn estimator must NOT be one-hot wrapped — it should see the
+def test_skribe_estimator_gets_raw_columns():
+    """A skribe estimator must NOT be one-hot wrapped — it should see the
     original categorical column, unchanged."""
     Xtr = pd.DataFrame({"color": ["red", "blue", "red", "green"], "n": [1, 2, 3, 4]})
     ytr = pd.Series([0, 1, 0, 1])
@@ -108,8 +108,8 @@ def test_failing_model_yields_nan_not_crash():
 # explain_comparison tests
 # ---------------------------------------------------------------------------
 
-class _FittedPrompt(BasePromptEstimator):
-    """Pre-fitted promptlearn stub: always predicts label based on x1 threshold."""
+class _FittedPrompt(BaseSkribeEstimator):
+    """Pre-fitted skribe stub: always predicts label based on x1 threshold."""
 
     def __init__(self):
         super().__init__(model="gpt-5.4-mini", verbose=False, max_train_rows=10)
@@ -154,7 +154,7 @@ def test_explain_comparison_returns_explanation(monkeypatch):
 
 
 def test_explain_comparison_includes_generated_code_in_prompt(monkeypatch):
-    """The generated code from promptlearn estimators must appear in the LLM prompt."""
+    """The generated code from skribe estimators must appear in the LLM prompt."""
     X, y = _explain_data()
     prompt_model = _FittedPrompt()
     dummy = DummyClassifier(strategy="most_frequent").fit(X, y)
@@ -184,11 +184,11 @@ def test_explain_comparison_disagreement_rate(monkeypatch):
     m1 = DummyClassifier(strategy="most_frequent").fit(X, y)
     m2 = DummyClassifier(strategy="most_frequent").fit(X, y)
 
-    # Use a promptlearn stub so we can monkeypatch _call_llm
+    # Use a skribe stub so we can monkeypatch _call_llm
     stub = _FittedPrompt()
     monkeypatch.setattr(stub, "_call_llm", lambda p, **kw: "same")
 
-    # Use a promptlearn stub that also always predicts 0 (same as DummyClassifier most_frequent)
+    # Use a skribe stub that also always predicts 0 (same as DummyClassifier most_frequent)
     always_zero = _FittedPrompt()
     always_zero.python_code_ = "def predict(**f): return 0"
     always_zero.predict = lambda X: np.zeros(len(pd.DataFrame(X)), dtype=int)
@@ -211,7 +211,7 @@ def test_explain_comparison_feature_importance_keys(monkeypatch):
     m1 = LogisticRegression(max_iter=1000).fit(X, y)
     m2 = DummyClassifier(strategy="most_frequent").fit(X, y)
 
-    # Patch the BasePromptEstimator constructor used internally for the LLM call
+    # Patch the BaseSkribeEstimator constructor used internally for the LLM call
     stub = _FittedPrompt()
     monkeypatch.setattr(stub, "_call_llm", lambda p, **kw: "ok")
     # Pass stub as one of the models so its _call_llm gets picked up

@@ -25,7 +25,7 @@ import pandas as pd
 
 from sklearn.exceptions import NotFittedError
 
-from promptlearn.classifier import PromptClassifier
+from skribe.classifier import SkribeClassifier
 
 # A known, hand-written rule so we can assert about explanations of it without
 # depending on the (stochastic) code-generation step.
@@ -34,7 +34,7 @@ KNOWN_CODE = "def predict(age):\n    return 1 if float(age) >= 18 else 0"
 
 def _make_fitted(feature_names=("age",), code=KNOWN_CODE):
     """Return an estimator in a fitted state without calling the generation LLM."""
-    clf = PromptClassifier()
+    clf = SkribeClassifier()
     clf.feature_names_ = list(feature_names)
     clf.target_name_ = "is_adult"
     clf.raw_python_code_ = code
@@ -53,7 +53,7 @@ def test_explain_returns_meta_and_data(monkeypatch):
     e = clf.explain()
     assert isinstance(e.meta, dict)
     assert isinstance(e.data, dict)
-    assert e.meta["name"] == "PromptClassifier"
+    assert e.meta["name"] == "SkribeClassifier"
     assert "params" in e.meta
     assert isinstance(e.data["summary"], str) and e.data["summary"].strip()
     assert "features_used" in e.data
@@ -77,7 +77,7 @@ def test_explain_attribute_access(monkeypatch):
 
 
 def test_explain_json_roundtrip(monkeypatch):
-    from promptlearn import Explanation  # fails until implemented/exported
+    from skribe import Explanation  # fails until implemented/exported
 
     clf = _make_fitted()
     monkeypatch.setattr(
@@ -103,7 +103,7 @@ def test_explain_str_is_summary(monkeypatch):
 # --------------------------------------------------------------------------- #
 def test_explain_before_fit_raises_notfitted():
     with pytest.raises(NotFittedError):
-        PromptClassifier().explain()
+        SkribeClassifier().explain()
 
 
 # --------------------------------------------------------------------------- #

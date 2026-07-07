@@ -4,14 +4,14 @@ import pandas as pd
 
 from sklearn.base import ClassifierMixin
 
-from .base import BasePromptEstimator, resolve_model
+from .base import BaseSkribeEstimator, resolve_model
 from .prompt_markers import DATA_MARKER
 from .utils import (
     generate_feature_dicts,
     safe_predict,
 )
 
-logger = logging.getLogger("promptlearn")
+logger = logging.getLogger("skribe")
 
 # Updated LLM prompt template with strong type casting and fallback instructions
 DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE = (
@@ -39,7 +39,7 @@ Only output valid Python code, no markdown or explanations.
 )
 
 
-class PromptClassifier(ClassifierMixin, BasePromptEstimator):
+class SkribeClassifier(ClassifierMixin, BaseSkribeEstimator):
     def __init__(
         self,
         model=None,
@@ -62,7 +62,7 @@ class PromptClassifier(ClassifierMixin, BasePromptEstimator):
 
     def fit(
         self, X, y, synthetic_features=None, dataset_description=None
-    ) -> "PromptClassifier":
+    ) -> "SkribeClassifier":
         return super()._fit(
             X,
             y,

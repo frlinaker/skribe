@@ -40,7 +40,7 @@ for MODEL in "${MODELS[@]}"; do
     echo "════════════════════════════════════════════════════════════════"
     echo "  Model $IDX/$TOTAL: $MODEL"
     echo "════════════════════════════════════════════════════════════════"
-    python benchmarks/run_promptlearn.py --llm "$MODEL" --workers 1 $EXTRA_ARGS || {
+    python benchmarks/run_skribe.py --llm "$MODEL" --workers 1 $EXTRA_ARGS || {
         echo "  ✗ Model $MODEL failed — continuing to next model"
     }
 done

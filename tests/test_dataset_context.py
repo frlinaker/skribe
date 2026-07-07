@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from promptlearn import PromptClassifier, PromptRegressor
+from skribe import SkribeClassifier, SkribeRegressor
 
 SIMPLE_CODE = "def predict(**f): return 0"
 
@@ -24,7 +24,7 @@ def _mock_llm(code=SIMPLE_CODE):
 
 def test_classifier_description_in_prompt(monkeypatch):
     # context_prepass=False so _call_llm is only called for fit + extend, not pre-pass.
-    clf = PromptClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=False)
+    clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=False)
     calls = []
 
     def fake_call_llm(prompt, web_search=False):
@@ -45,7 +45,7 @@ def test_classifier_description_in_prompt(monkeypatch):
 
 def test_regressor_description_in_prompt(monkeypatch):
     # context_prepass=False so the raw description flows straight into the prompt.
-    reg = PromptRegressor(model="gpt-5.4-mini", verbose=False, context_prepass=False)
+    reg = SkribeRegressor(model="gpt-5.4-mini", verbose=False, context_prepass=False)
     calls = []
 
     def fake_call_llm(prompt, web_search=False):
@@ -64,7 +64,7 @@ def test_regressor_description_in_prompt(monkeypatch):
 
 def test_description_precedes_instructions(monkeypatch):
     """Dataset context block must appear after task instructions but before Data: in fit_prompt_."""
-    clf = PromptClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=False)
+    clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=False)
 
     def fake_call_llm(prompt, web_search=False):
         return SIMPLE_CODE
@@ -84,7 +84,7 @@ def test_description_precedes_instructions(monkeypatch):
 
 def test_fit_prompt_includes_web_search_prefix(monkeypatch):
     """fit_prompt_ must reflect the actual prompt sent, including the web search prefix."""
-    clf = PromptClassifier(model="gpt-5.5", verbose=False, web_search=True)
+    clf = SkribeClassifier(model="gpt-5.5", verbose=False, web_search=True)
 
     def fake_call_llm(prompt, web_search=False):
         return SIMPLE_CODE
@@ -99,7 +99,7 @@ def test_fit_prompt_includes_web_search_prefix(monkeypatch):
 
 
 def test_no_description_prompt_unchanged(monkeypatch):
-    clf = PromptClassifier(model="gpt-5.4-mini", verbose=False)
+    clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False)
     captured = {}
 
     def fake_call_llm(prompt, web_search=False):
@@ -123,7 +123,7 @@ def test_no_description_prompt_unchanged(monkeypatch):
 def test_context_prepass_fires_before_fit(monkeypatch):
     """When context_prepass=True and dataset_description is given, an extra LLM
     call is made before the main fit call, and context_summary_ is set."""
-    clf = PromptClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
+    clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
     calls = []
 
     def fake_call_llm(prompt, web_search=False):
@@ -148,7 +148,7 @@ def test_context_prepass_fires_before_fit(monkeypatch):
 
 def test_context_prepass_summary_appears_in_fit_prompt(monkeypatch):
     """The pre-pass output replaces the raw description in the main prompt."""
-    clf = PromptClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
+    clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
     SUMMARY = "CLEAN SUMMARY: predicts income class."
     call_count = [0]
 
@@ -172,7 +172,7 @@ def test_context_prepass_summary_appears_in_fit_prompt(monkeypatch):
 def test_context_prepass_disabled_uses_raw_description(monkeypatch):
     """With context_prepass=False, the raw description (sanitized) goes straight into
     the prompt and context_summary_ stays None."""
-    clf = PromptClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=False)
+    clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=False)
 
     def fake_call_llm(prompt, web_search=False):
         return SIMPLE_CODE
@@ -189,7 +189,7 @@ def test_context_prepass_disabled_uses_raw_description(monkeypatch):
 
 def test_context_prepass_no_description_skipped(monkeypatch):
     """Pre-pass is skipped entirely when no dataset_description is given."""
-    clf = PromptClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
+    clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
     calls = []
 
     def fake_call_llm(prompt, web_search=False):
@@ -209,7 +209,7 @@ def test_context_prepass_no_description_skipped(monkeypatch):
 
 def test_context_prepass_web_search_forwarded(monkeypatch):
     """When web_search=True, the pre-pass call also gets web_search=True."""
-    clf = PromptClassifier(
+    clf = SkribeClassifier(
         model="gpt-5.5", verbose=False, web_search=True, context_prepass=True
     )
     prepass_web_search = []
@@ -230,7 +230,7 @@ def test_context_prepass_web_search_forwarded(monkeypatch):
 
 def test_context_prepass_fallback_on_llm_failure(monkeypatch):
     """If the pre-pass LLM call fails, fit() continues with the sanitized raw description."""
-    clf = PromptClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
+    clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
     call_count = [0]
 
     def fake_call_llm(prompt, web_search=False):
@@ -255,7 +255,7 @@ def test_context_prepass_fallback_on_llm_failure(monkeypatch):
 
 
 def test_web_search_passed_to_call_llm(monkeypatch):
-    clf = PromptClassifier(model="gpt-5.5", verbose=False, web_search=True)
+    clf = SkribeClassifier(model="gpt-5.5", verbose=False, web_search=True)
     captured = []
 
     def fake_call_llm(prompt, web_search=False):
@@ -274,7 +274,7 @@ def test_web_search_passed_to_call_llm(monkeypatch):
 
 
 def test_web_search_false_by_default(monkeypatch):
-    clf = PromptClassifier(model="gpt-5.5", verbose=False)
+    clf = SkribeClassifier(model="gpt-5.5", verbose=False)
     captured = []
 
     def fake_call_llm(prompt, web_search=False):
@@ -291,7 +291,7 @@ def test_web_search_false_by_default(monkeypatch):
 
 
 def test_web_search_prompt_prefix(monkeypatch):
-    clf = PromptClassifier(model="gpt-5.5", verbose=False, web_search=True)
+    clf = SkribeClassifier(model="gpt-5.5", verbose=False, web_search=True)
     captured = {}
 
     def fake_call_llm(prompt, web_search=False):
@@ -311,7 +311,7 @@ def test_web_search_prompt_prefix(monkeypatch):
 def test_web_search_unsupported_model_warns(monkeypatch, caplog):
     import logging
 
-    clf = PromptClassifier(model="claude-sonnet-4-6", verbose=False, web_search=True)
+    clf = SkribeClassifier(model="claude-sonnet-4-6", verbose=False, web_search=True)
 
     calls = []
 
@@ -326,7 +326,7 @@ def test_web_search_unsupported_model_warns(monkeypatch, caplog):
     X = pd.DataFrame({"x": [1, 2]})
     y = pd.Series([0, 1])
 
-    with caplog.at_level(logging.WARNING, logger="promptlearn"):
+    with caplog.at_level(logging.WARNING, logger="skribe"):
         clf.fit(X, y)
 
     assert "not in the known supported list" in caplog.text
@@ -336,7 +336,7 @@ def test_web_search_unsupported_model_warns(monkeypatch, caplog):
 
 def test_web_search_supported_model_passes_options(monkeypatch):
     """Chat Completions path: gpt-4o-search-preview gets web_search_options."""
-    clf = PromptClassifier(
+    clf = SkribeClassifier(
         model="gpt-4o-search-preview", verbose=False, web_search=True
     )
 
@@ -359,7 +359,7 @@ def test_web_search_supported_model_passes_options(monkeypatch):
 
 def test_web_search_responses_api_model(monkeypatch):
     """Responses API path: gpt-5.5 uses litellm.responses with web_search tool."""
-    clf = PromptClassifier(model="gpt-5.5", verbose=False, web_search=True)
+    clf = SkribeClassifier(model="gpt-5.5", verbose=False, web_search=True)
 
     responses_calls = []
 

@@ -1,7 +1,7 @@
-"""Shared utilities for the promptlearn model-progression benchmarks.
+"""Shared utilities for the skribe model-progression benchmarks.
 
-This module is imported by run_baselines.py, run_promptlearn.py, and collate.py.
-It must NOT import from promptlearn itself — only the runner scripts do that.
+This module is imported by run_baselines.py, run_skribe.py, and collate.py.
+It must NOT import from skribe itself — only the runner scripts do that.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from sklearn.metrics import (
 )
 from sklearn.preprocessing import LabelBinarizer
 
-logger = logging.getLogger("promptlearn.progression")
+logger = logging.getLogger("skribe.progression")
 
 CACHE_SCHEMA = "progression-v1"
 
@@ -312,11 +312,11 @@ def _tabpfn_classifier():
 def build_summary_df(results: list[dict]) -> pd.DataFrame:
     """Long-form DataFrame: one row per (dataset, learner) with all metrics.
 
-    promptlearn learner names are qualified as "promptlearn[<llm-label>]" so they
+    skribe learner names are qualified as "skribe[<llm-label>]" so they
     are never confused with the LLM model dimension.  Baseline learners
     (logreg, xgboost, tabpfn) appear once per dataset with no LLM association.
 
-    Accepts both promptlearn cache dicts (which have "dataset" and "model_id" keys)
+    Accepts both skribe cache dicts (which have "dataset" and "model_id" keys)
     and baseline-only cache dicts (which have "logreg"/"xgboost"/"tabpfn" keys but
     no "dataset"/"model_id").  Callers must inject a "dataset" key into baseline-only
     dicts before passing them here (collate.py does this).
@@ -329,13 +329,13 @@ def build_summary_df(results: list[dict]) -> pd.DataFrame:
         dataset = r.get("dataset")
         model_id = r.get("model_id")
 
-        # promptlearn rows carry both dataset and model_id
+        # skribe rows carry both dataset and model_id
         if dataset and model_id:
             meta = model_meta.get(model_id, {})
             llm_label = meta.get("label", model_id)
 
-            if "promptlearn" in r and "error" not in r["promptlearn"]:
-                m = r["promptlearn"]
+            if "skribe" in r and "error" not in r["skribe"]:
+                m = r["skribe"]
                 web_search = meta.get("web_search", False)
                 row = {
                     "dataset": dataset,
@@ -345,7 +345,7 @@ def build_summary_df(results: list[dict]) -> pd.DataFrame:
                     "family": meta.get("family", ""),
                     "provider": meta.get("provider", "openai"),
                     "web_search": web_search,
-                    "learner": f"promptlearn[{llm_label}]",
+                    "learner": f"skribe[{llm_label}]",
                     "n_rows": r.get("n_rows"),
                     "n_cols": r.get("n_cols"),
                     "n_classes": r.get("n_classes"),
@@ -354,7 +354,7 @@ def build_summary_df(results: list[dict]) -> pd.DataFrame:
                 row["fit_time_s"] = m.get("fit_time_s")
                 rows.append(row)
 
-        # Emit baselines from any dict that has a dataset key (including promptlearn
+        # Emit baselines from any dict that has a dataset key (including skribe
         # cache files that embed baselines from the old run_model_progression flow).
         if dataset:
             for learner in ("logreg", "xgboost", "tabpfn"):
@@ -397,8 +397,8 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # ── shared prep ──────────────────────────────────────────────────────────
-    # promptlearn rows have a release_date; baseline rows do not.
-    pl_df = df[df["learner"].str.startswith("promptlearn[")].copy()
+    # skribe rows have a release_date; baseline rows do not.
+    pl_df = df[df["learner"].str.startswith("skribe[")].copy()
     pl_df["release_date"] = pd.to_datetime(pl_df["release_date"])
 
     if "web_search" not in pl_df.columns:
@@ -467,15 +467,15 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
             label=f"TabPFN  ({tabpfn_mean:.3f})",
         )
 
-    # promptlearn — one solid line per provider (base models) + one dashed line
+    # skribe — one solid line per provider (base models) + one dashed line
     # per provider (+web models).  Cumulative-max envelope so weaker models
     # don't cause visual dips.
     provider_styles = {
-        "openai": {"color": "#D65F5F", "marker": "o", "label": "promptlearn / OpenAI GPT"},
+        "openai": {"color": "#D65F5F", "marker": "o", "label": "skribe / OpenAI GPT"},
         "google": {
             "color": "#4285F4",
             "marker": "s",
-            "label": "promptlearn / Google Gemini",
+            "label": "skribe / Google Gemini",
         },
     }
     if "web_search" not in pl_data.columns:
@@ -493,7 +493,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
             grp = grp.sort_values("release_date").reset_index(drop=True)
             style = provider_styles.get(
                 provider,
-                {"color": "#999", "marker": "o", "label": f"promptlearn / {provider}"},
+                {"color": "#999", "marker": "o", "label": f"skribe / {provider}"},
             )
             color = style["color"]
 
@@ -544,10 +544,10 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
             grp = grp.sort_values("release_date").reset_index(drop=True)
             style = provider_styles.get(
                 provider,
-                {"color": "#999", "marker": "o", "label": f"promptlearn / {provider}"},
+                {"color": "#999", "marker": "o", "label": f"skribe / {provider}"},
             )
             color = style["color"]
-            web_label = f"promptlearn / {'OpenAI GPT' if provider == 'openai' else 'Google Gemini'} +web"
+            web_label = f"skribe / {'OpenAI GPT' if provider == 'openai' else 'Google Gemini'} +web"
 
             grp["best_so_far"] = grp["accuracy"].cummax()
             final_acc_web = grp["best_so_far"].iloc[-1]
@@ -630,7 +630,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
     ax.set_xlabel("Model release date", fontsize=12)
     ax.set_ylabel(f"Mean accuracy ({n_datasets} datasets)", fontsize=12)
     ax.set_title(
-        "promptlearn accuracy grows with LLM evolution\n"
+        "skribe accuracy grows with LLM evolution\n"
         "Classical ML baselines shown as dashed horizontals",
         fontsize=13,
     )
@@ -648,7 +648,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
     logger.info("Saved timeline chart → %s", out)
     plt.close(fig)
 
-    # ── 2. Per-dataset heatmap: datasets × LLM models, promptlearn accuracy ──
+    # ── 2. Per-dataset heatmap: datasets × LLM models, skribe accuracy ──
     # Order columns by release date.
     col_order = (
         pl_data.sort_values("release_date")["llm_label"].tolist()
@@ -684,7 +684,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
             linecolor="white",
             cbar_kws={"label": "Accuracy", "shrink": 0.8},
         )
-        ax2.set_title("promptlearn accuracy per dataset × model", fontsize=12, pad=12)
+        ax2.set_title("skribe accuracy per dataset × model", fontsize=12, pad=12)
         ax2.set_xlabel("")
         ax2.set_ylabel("")
         ax2.tick_params(axis="x", rotation=30)
@@ -751,7 +751,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                 prov = row["provider"]
                 color = _provider_bar_color.get(prov, "#999999")
                 prov_name = "OpenAI GPT" if prov == "openai" else "Google Gemini"
-                label_str = f"promptlearn / {prov_name}"
+                label_str = f"skribe / {prov_name}"
                 bar = ax.bar(
                     i, row["accuracy"], color=color,
                     label=label_str if label_str not in _legend_seen else "_nolegend_",
@@ -793,7 +793,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
         ax3_bot.set_xlabel("LLM model (oldest → newest)", fontsize=12)
 
         fig3.suptitle(
-            "promptlearn vs baselines: mean accuracy by LLM generation",
+            "skribe vs baselines: mean accuracy by LLM generation",
             fontsize=13, y=1.01,
         )
         fig3.tight_layout()
@@ -802,7 +802,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
         logger.info("Saved grouped bar chart → %s", out3)
         plt.close(fig3)
 
-    # ── 4. Gap-to-baseline chart: promptlearn vs best baseline per LLM ───────
+    # ── 4. Gap-to-baseline chart: skribe vs best baseline per LLM ───────
     if not pl_data.empty:
         best_baseline_acc = max(
             (
@@ -850,7 +850,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
             ax4.set_xlabel("LLM model (oldest → newest)", fontsize=12)
             ax4.set_ylabel("Accuracy gap vs best baseline", fontsize=12)
             ax4.set_title(
-                "promptlearn gap to best baseline (logreg / XGBoost / TabPFN)\n"
+                "skribe gap to best baseline (logreg / XGBoost / TabPFN)\n"
                 "Solid = above baseline  ·  Faded = below  ·  // = +web search",
                 fontsize=12,
             )
@@ -891,7 +891,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                 if ld.empty:
                     continue
                 val = ld["accuracy"].mean()
-                pl_dates = ds_df[ds_df["learner"].str.startswith("promptlearn[")][
+                pl_dates = ds_df[ds_df["learner"].str.startswith("skribe[")][
                     "release_date"
                 ].dropna()
                 if pl_dates.empty:
@@ -908,9 +908,9 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                 )
                 _ds_baseline_ys.append(val)
 
-            # promptlearn — solid envelope line per provider (base), dotted for +web.
+            # skribe — solid envelope line per provider (base), dotted for +web.
             # Final accuracy shown in legend label; no inline text annotations.
-            pl_ds = ds_df[ds_df["learner"].str.startswith("promptlearn[")].reset_index(drop=True).copy()
+            pl_ds = ds_df[ds_df["learner"].str.startswith("skribe[")].reset_index(drop=True).copy()
             if "web_search" not in pl_ds.columns:
                 pl_ds["web_search"] = False
             pl_ds["web_search"] = pl_ds["web_search"].fillna(False).astype(bool)
@@ -936,7 +936,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                     color=pstyle["color"],
                     linewidth=2.2,
                     linestyle="-",
-                    label=f"promptlearn/{pstyle['label']} ({final_acc:.3f})",
+                    label=f"skribe/{pstyle['label']} ({final_acc:.3f})",
                     zorder=3,
                 )
                 for _, row in grp.iterrows():
@@ -963,7 +963,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                     color=color,
                     linewidth=1.8,
                     linestyle=":",
-                    label=f"promptlearn/{pstyle['label']} +web ({final_acc:.3f})",
+                    label=f"skribe/{pstyle['label']} +web ({final_acc:.3f})",
                     zorder=3,
                     alpha=0.85,
                 )
@@ -999,7 +999,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
             axes[idx // ncols][idx % ncols].set_visible(False)
 
         fig5.suptitle(
-            "promptlearn accuracy per dataset across model generations\n"
+            "skribe accuracy per dataset across model generations\n"
             "Dashed = classical ML baselines",
             fontsize=13,
             y=1.01,
@@ -1023,7 +1023,7 @@ def print_summary_table(df: pd.DataFrame):
     all_datasets = sorted(df["dataset"].unique())
 
     # ── LLM rows ─────────────────────────────────────────────────────────────
-    pl_rows = df[df["learner"].str.startswith("promptlearn[")].copy()
+    pl_rows = df[df["learner"].str.startswith("skribe[")].copy()
     if not pl_rows.empty:
         pl_rows["release_date"] = pd.to_datetime(pl_rows["release_date"])
         # Pivot: rows = llm_label (sorted by release_date), cols = dataset

@@ -20,10 +20,10 @@ from .utils import (
     sanitize_dataset_description,
 )
 
-logger = logging.getLogger("promptlearn")
+logger = logging.getLogger("skribe")
 
 # The library default model. Used when no model is passed and the
-# PROMPTLEARN_MODEL environment variable is unset.
+# SKRIBE_MODEL environment variable is unset.
 DEFAULT_MODEL = "gpt-5.5"
 
 # Fraction of the model's max_input_tokens budget used for the prompt.
@@ -40,16 +40,16 @@ class _OutputTruncated(Exception):
 def resolve_model(model: Optional[str]) -> str:
     """Resolve the model string for an estimator.
 
-    An explicit ``model`` always wins. Otherwise the ``PROMPTLEARN_MODEL``
+    An explicit ``model`` always wins. Otherwise the ``SKRIBE_MODEL``
     environment variable is used when set (handy for pointing tests/CI at a
     cheaper, faster model), falling back to :data:`DEFAULT_MODEL`.
     """
     if model is not None:
         return model
-    return os.environ.get("PROMPTLEARN_MODEL", DEFAULT_MODEL)
+    return os.environ.get("SKRIBE_MODEL", DEFAULT_MODEL)
 
 
-class BasePromptEstimator(BaseEstimator):
+class BaseSkribeEstimator(BaseEstimator):
     def __init__(
         self,
         model: str,

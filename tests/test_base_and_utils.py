@@ -2,12 +2,12 @@ import warnings
 
 import pandas as pd
 import pytest
-from promptlearn.base import BasePromptEstimator, _CONTEXT_HEADROOM
-from promptlearn.utils import sanitize_dataset_description
+from skribe.base import BaseSkribeEstimator, _CONTEXT_HEADROOM
+from skribe.utils import sanitize_dataset_description
 
 
 def test_get_set_params():
-    est = BasePromptEstimator(model="gpt-4", verbose=True, max_train_rows=10)
+    est = BaseSkribeEstimator(model="gpt-4", verbose=True, max_train_rows=10)
     params = est.get_params()
     assert params["model"] == "gpt-4"
     est.set_params(model="gpt-3.5-turbo")
@@ -17,7 +17,7 @@ def test_get_set_params():
 def test_call_llm_raises(monkeypatch):
     import litellm
 
-    est = BasePromptEstimator(model="gpt-4", verbose=False, max_train_rows=1)
+    est = BaseSkribeEstimator(model="gpt-4", verbose=False, max_train_rows=1)
 
     def boom(*args, **kwargs):
         raise RuntimeError("provider error")
@@ -40,7 +40,7 @@ def test_call_llm_normalizes_ollama_model(monkeypatch):
         return type("Response", (), {"choices": [choice]})
 
     monkeypatch.setattr(litellm, "completion", fake_completion)
-    est = BasePromptEstimator(model="ollama:llama3.1", verbose=False, max_train_rows=1)
+    est = BaseSkribeEstimator(model="ollama:llama3.1", verbose=False, max_train_rows=1)
     out = est._call_llm("hi")
     assert captured["model"] == "ollama/llama3.1"
     assert out == "hello"
@@ -70,7 +70,7 @@ def test_truncate_no_op_when_fits(monkeypatch):
     """When the prompt fits in the context window, df is returned unchanged."""
     import litellm
 
-    est = BasePromptEstimator(model="gpt-4o", verbose=False, max_train_rows=None)
+    est = BaseSkribeEstimator(model="gpt-4o", verbose=False, max_train_rows=None)
     monkeypatch.setattr(
         litellm, "get_model_info", lambda m: {"max_input_tokens": 128_000}
     )
@@ -85,7 +85,7 @@ def test_truncate_warns_and_reduces(monkeypatch):
     """When the prompt exceeds the budget, a UserWarning is raised and rows are dropped."""
     import litellm
 
-    est = BasePromptEstimator(model="gpt-4o", verbose=False, max_train_rows=None)
+    est = BaseSkribeEstimator(model="gpt-4o", verbose=False, max_train_rows=None)
     monkeypatch.setattr(
         litellm, "get_model_info", lambda m: {"max_input_tokens": 1000}
     )
@@ -114,7 +114,7 @@ def test_truncate_skips_check_when_model_unknown(monkeypatch):
     """If get_model_info raises, truncation is skipped with a warning (no crash)."""
     import litellm
 
-    est = BasePromptEstimator(model="unknown-model", verbose=False, max_train_rows=None)
+    est = BaseSkribeEstimator(model="unknown-model", verbose=False, max_train_rows=None)
     monkeypatch.setattr(litellm, "get_model_info", lambda m: (_ for _ in ()).throw(Exception("unknown")))
 
     df = pd.DataFrame({"x": range(20)})
@@ -124,17 +124,17 @@ def test_truncate_skips_check_when_model_unknown(monkeypatch):
 
 def test_max_train_rows_none_default():
     """max_train_rows defaults to None (no hard cap)."""
-    from promptlearn import PromptClassifier, PromptRegressor
-    assert PromptClassifier().max_train_rows is None
-    assert PromptRegressor().max_train_rows is None
+    from skribe import SkribeClassifier, SkribeRegressor
+    assert SkribeClassifier().max_train_rows is None
+    assert SkribeRegressor().max_train_rows is None
 
 
 def test_max_train_rows_explicit_still_caps(monkeypatch):
     """When max_train_rows is set, data is still capped before the context check."""
     import litellm
-    from promptlearn import PromptClassifier
+    from skribe import SkribeClassifier
 
-    clf = PromptClassifier(model="gpt-5.4-mini", verbose=False, max_train_rows=5)
+    clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, max_train_rows=5)
     monkeypatch.setattr(litellm, "get_model_info", lambda m: {"max_input_tokens": 1_000_000})
     monkeypatch.setattr(litellm, "token_counter", lambda **kw: 10)
 
@@ -159,7 +159,7 @@ def test_max_train_rows_explicit_still_caps(monkeypatch):
 
 
 def test_extend_code_handles_llm_failure(monkeypatch):
-    class DummyEstimator(BasePromptEstimator):
+    class DummyEstimator(BaseSkribeEstimator):
         def __init__(self):
             super().__init__(model="dummy-model", verbose=False, max_train_rows=10)
 

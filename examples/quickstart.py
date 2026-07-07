@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""A guided tour of promptlearn, as a menu of self-contained demos.
+"""A guided tour of skribe, as a menu of self-contained demos.
 
 Every demo makes live LLM calls, so they cost real API usage. Running this
 script with no arguments just prints this help and the demo list — it does not
@@ -37,10 +37,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from promptlearn import (
-    PromptClassifier,
-    PromptRegressor,
-    PromptFeatureEngineer,
+from skribe import (
+    SkribeClassifier,
+    SkribeRegressor,
+    SkribeFeatureEngineer,
     compare_models,
 )
 
@@ -82,7 +82,7 @@ def _tee_stdout(fileobj):
 
 
 def dump_model(est, label="model"):
-    """When --dump is active, persist a fitted promptlearn estimator into the
+    """When --dump is active, persist a fitted skribe estimator into the
     current demo's artifact dir: its raw and extended generated code, a
     plain-English explanation, and the joblib model. A no-op otherwise."""
     if not _DUMP_DIR:
@@ -115,7 +115,7 @@ def demo_zero_row(args):
     X = pd.DataFrame(columns=["country_name"])
     y = pd.Series(name="has_blue_in_flag", dtype=int)
 
-    clf = PromptClassifier(model=args.model, verbose=False)
+    clf = SkribeClassifier(model=args.model, verbose=False)
     clf.fit(X, y)  # only headers — nothing to learn from but the names
     dump_model(clf)
 
@@ -129,7 +129,7 @@ def demo_sample(args):
     X = np.array([[-1], [0], [1], [2], [3]])
     y = np.array([1, 3, 5, 7, 9])  # y = 2x + 3
 
-    reg = PromptRegressor(model=args.model, verbose=False)
+    reg = SkribeRegressor(model=args.model, verbose=False)
     reg.fit(X, y)
     dump_model(reg)
     print(reg.sample(10).to_string(index=False))
@@ -143,7 +143,7 @@ def demo_joblib(args):
     X = np.array([[-1], [0], [1], [2], [3]])
     y = np.array([1, 3, 5, 7, 9])  # y = 2x + 3
 
-    reg = PromptRegressor(model=args.model, verbose=False)
+    reg = SkribeRegressor(model=args.model, verbose=False)
     reg.fit(X, y)
     dump_model(reg)
 
@@ -162,7 +162,7 @@ def demo_linear(args):
     X = np.linspace(-1, 3, 5).reshape(-1, 1)
     y = 2 * X.flatten() + 3
 
-    reg = PromptRegressor(model=args.model, verbose=False)
+    reg = SkribeRegressor(model=args.model, verbose=False)
     reg.fit(X, y)
     dump_model(reg)
 
@@ -181,7 +181,7 @@ def demo_nonlinear(args):
     X = pd.DataFrame({"length": length, "volume": volume})
     y = pd.Series(3 * length**2 + 2 * volume + 5, name="output")
 
-    reg = PromptRegressor(model=args.model, verbose=False)
+    reg = SkribeRegressor(model=args.model, verbose=False)
     reg.fit(X, y)
     dump_model(reg)
 
@@ -206,7 +206,7 @@ def demo_xor(args):
     X = np.array([[0, 0], [0, 1], [1, 0], [1, 1]])
     y = np.array([0, 1, 1, 0])
 
-    clf = PromptClassifier(model=args.model, verbose=False)
+    clf = SkribeClassifier(model=args.model, verbose=False)
     clf.fit(X, y)
     dump_model(clf)
     preds = clf.predict(X)
@@ -216,7 +216,7 @@ def demo_xor(args):
 
 
 def demo_world_knowledge(args):
-    """promptlearn can fold in real-world knowledge that the raw features alone
+    """skribe can fold in real-world knowledge that the raw features alone
     don't contain — both for classification and regression."""
     banner("world knowledge — classification (does the flag contain blue?)")
     data = pd.DataFrame(
@@ -225,7 +225,7 @@ def demo_world_knowledge(args):
             "has_blue_in_flag": [1, 0, 0, 1, 0],
         }
     )
-    clf = PromptClassifier(model=args.model, verbose=False)
+    clf = SkribeClassifier(model=args.model, verbose=False)
     clf.fit(data[["country_name"]], data["has_blue_in_flag"])
     dump_model(clf, "flag_classifier")
     for country in ["France", "Brazil", "Spain"]:
@@ -236,7 +236,7 @@ def demo_world_knowledge(args):
     # the number of legs, which the model knows per animal.
     banner("world knowledge — regression (money-per-animal riddle)")
     train = pd.DataFrame({"animal": ["chicken", "ant", "spider"], "money": [7, 21, 28]})
-    reg = PromptRegressor(model=args.model, verbose=False)
+    reg = SkribeRegressor(model=args.model, verbose=False)
     reg.fit(train[["animal"]], train["money"])
     dump_model(reg, "money_regressor")
     for animal in ["dog", "bee", "crab"]:
@@ -245,7 +245,7 @@ def demo_world_knowledge(args):
 
 
 def demo_feature_engineer(args):
-    """PromptFeatureEngineer writes feature code from world knowledge, so a
+    """SkribeFeatureEngineer writes feature code from world knowledge, so a
     plain LogisticRegression can use signal the raw column doesn't expose."""
     from sklearn.compose import ColumnTransformer, make_column_selector as selector
     from sklearn.linear_model import LogisticRegression
@@ -272,7 +272,7 @@ def demo_feature_engineer(args):
     )
     X, y = df[["country"]], df["tropical"]
 
-    fe = PromptFeatureEngineer(model=args.model, verbose=False)
+    fe = SkribeFeatureEngineer(model=args.model, verbose=False)
     encode = ColumnTransformer(
         [
             (
@@ -297,7 +297,7 @@ def demo_feature_engineer(args):
 
 
 def demo_multioutput(args):
-    """promptlearn estimators are sklearn-compatible, so meta-estimators like
+    """skribe estimators are sklearn-compatible, so meta-estimators like
     MultiOutputRegressor wrap them directly (Linnerud: 3 targets)."""
     from sklearn.datasets import load_linnerud
     from sklearn.multioutput import MultiOutputRegressor
@@ -306,7 +306,7 @@ def demo_multioutput(args):
     X = pd.DataFrame(data.data, columns=data.feature_names)
     y = pd.DataFrame(data.target, columns=data.target_names)
 
-    reg = MultiOutputRegressor(PromptRegressor(model=args.model, verbose=False))
+    reg = MultiOutputRegressor(SkribeRegressor(model=args.model, verbose=False))
     reg.fit(X, y)
     for target, inner in zip(y.columns, reg.estimators_):
         dump_model(inner, f"target_{target}")
@@ -324,7 +324,7 @@ def demo_gridsearch(args):
     X, y = data.data.head(60), data.target.head(60)  # keep it small/cheap
 
     search = GridSearchCV(
-        PromptClassifier(model=args.model, verbose=False),
+        SkribeClassifier(model=args.model, verbose=False),
         param_grid={"max_train_rows": [20, 40]},
         cv=2,
     )
@@ -355,7 +355,7 @@ def demo_large_dataset(args):
         f"  full train set: {len(X_train)} rows; sending only max_train_rows={n_rows}"
     )
 
-    clf = PromptClassifier(model=args.model, verbose=False, max_train_rows=n_rows)
+    clf = SkribeClassifier(model=args.model, verbose=False, max_train_rows=n_rows)
     clf.fit(X_train, y_train)
     dump_model(clf)
 
@@ -365,7 +365,7 @@ def demo_large_dataset(args):
 
 
 # --------------------------------------------------------------------------- #
-# compare: benchmark promptlearn vs classical models (the model zoo)
+# compare: benchmark skribe vs classical models (the model zoo)
 # --------------------------------------------------------------------------- #
 def _load_csv_pair(stem, target, task):
     here = os.path.dirname(os.path.abspath(__file__))
@@ -389,9 +389,9 @@ def _load_compare_dataset(name):
 
         data = load_diabetes(as_frame=True)
         return data.data, data.target, "regression"
-    if name == "mammal":  # world-knowledge: only promptlearn can use the name
+    if name == "mammal":  # world-knowledge: only skribe can use the name
         return _load_csv_pair("mammal", "is_mammal", "classification")
-    if name == "fall":  # physics: promptlearn can recover fall_time = sqrt(2h/g)
+    if name == "fall":  # physics: skribe can recover fall_time = sqrt(2h/g)
         return _load_csv_pair("fall", "fall_time_s", "regression")
     if name == "titanic":
         df, _ = _load_titanic()
@@ -413,7 +413,7 @@ def _build_compare_models(task, model):
             "dummy": DummyClassifier(strategy="most_frequent"),
             "logreg": LogisticRegression(max_iter=1000),
             "random_forest": RandomForestClassifier(n_estimators=50, random_state=0),
-            f"promptlearn[{model}]": PromptClassifier(model=model, verbose=False),
+            f"skribe[{model}]": SkribeClassifier(model=model, verbose=False),
         }
         try:
             from xgboost import XGBClassifier
@@ -426,7 +426,7 @@ def _build_compare_models(task, model):
             "dummy": DummyRegressor(),
             "linreg": LinearRegression(),
             "random_forest": RandomForestRegressor(n_estimators=50, random_state=0),
-            f"promptlearn[{model}]": PromptRegressor(model=model, verbose=False),
+            f"skribe[{model}]": SkribeRegressor(model=model, verbose=False),
         }
         try:
             from xgboost import XGBRegressor
@@ -438,7 +438,7 @@ def _build_compare_models(task, model):
 
 
 def demo_compare(args):
-    """Fit promptlearn alongside sklearn/XGBoost baselines on one dataset and
+    """Fit skribe alongside sklearn/XGBoost baselines on one dataset and
     print a side-by-side metrics table and a row-by-row predictions table."""
     from sklearn.model_selection import train_test_split
 
@@ -455,7 +455,7 @@ def demo_compare(args):
     metrics, predictions = compare_models(
         models, X_train, y_train, X_test, y_test, task
     )
-    # The promptlearn estimators are fitted in place; persist their heuristics.
+    # The skribe estimators are fitted in place; persist their heuristics.
     for model_name, est in models.items():
         if getattr(est, "python_code_", None):
             dump_model(est, model_name.replace("/", "_"))
@@ -515,7 +515,7 @@ def demo_titanic(args):
     X_train, X_val, y_train, y_val = train_test_split(
         X, y, test_size=0.3, stratify=y, random_state=42
     )
-    clf = PromptClassifier(model=args.model, verbose=args.verbose)
+    clf = SkribeClassifier(model=args.model, verbose=args.verbose)
     clf.fit(X_train, y_train)
     dump_model(clf)
 

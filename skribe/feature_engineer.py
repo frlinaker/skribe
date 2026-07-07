@@ -12,10 +12,10 @@ from sklearn.model_selection import StratifiedShuffleSplit, cross_val_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OrdinalEncoder
 
-from .base import BasePromptEstimator, resolve_model
+from .base import BaseSkribeEstimator, resolve_model
 from .utils import generate_feature_dicts, normalize_feature_name
 
-logger = logging.getLogger("promptlearn")
+logger = logging.getLogger("skribe")
 
 DEFAULT_FEATURE_ENGINEERING_PROMPT_TEMPLATE = """
 You are doing feature engineering for a tabular machine-learning model.
@@ -44,7 +44,7 @@ Data (sample rows; the last column is the target if one is present):
 """
 
 
-class PromptFeatureEngineer(TransformerMixin, BasePromptEstimator):
+class SkribeFeatureEngineer(TransformerMixin, BaseSkribeEstimator):
     """LLM-powered feature engineering as a scikit-learn transformer.
 
     At ``fit`` the LLM writes a standalone ``transform(**features)`` function
@@ -78,10 +78,10 @@ class PromptFeatureEngineer(TransformerMixin, BasePromptEstimator):
 
     def fit(
         self, X, y=None, dataset_stats: dict | None = None
-    ) -> "PromptFeatureEngineer":
+    ) -> "SkribeFeatureEngineer":
         if not isinstance(X, pd.DataFrame):
             raise ValueError(
-                "PromptFeatureEngineer requires a pandas DataFrame with named columns."
+                "SkribeFeatureEngineer requires a pandas DataFrame with named columns."
             )
         self.explanation_ = None  # invalidate any cached explanation from a prior fit
 
@@ -145,7 +145,7 @@ class PromptFeatureEngineer(TransformerMixin, BasePromptEstimator):
             raise RuntimeError("Call fit() before transform().")
         if not isinstance(X, pd.DataFrame):
             raise ValueError(
-                "PromptFeatureEngineer requires a pandas DataFrame with named columns."
+                "SkribeFeatureEngineer requires a pandas DataFrame with named columns."
             )
 
         X_norm = X.copy()
@@ -177,7 +177,7 @@ class PromptFeatureEngineer(TransformerMixin, BasePromptEstimator):
         """Confirm the generated function returns a consistent dict of features."""
         if not rows:
             raise ValueError(
-                "PromptFeatureEngineer needs at least one training row to validate "
+                "SkribeFeatureEngineer needs at least one training row to validate "
                 "the generated features."
             )
         keysets = set()
@@ -259,7 +259,7 @@ def _make_logreg_pipeline(X: pd.DataFrame) -> Pipeline:
 def _probe_fe_delta(
     X: pd.DataFrame,
     y,
-    fe: "PromptFeatureEngineer",
+    fe: "SkribeFeatureEngineer",
     cv: int,
     probe_size: float,
 ) -> tuple[float, float, int]:
@@ -322,14 +322,14 @@ def _probe_fe_delta(
     return score_base, score_fe, len(train_idx)
 
 
-class AdaptiveFeatureEngineer(BaseEstimator, TransformerMixin):
+class AdaptiveSkribeEngineer(BaseEstimator, TransformerMixin):
     """Feature engineer with automatic pass-through for datasets unlikely to benefit.
 
     Uses a two-stage decision:
 
     1. **Size guard** (no LLM): skip if n_rows < ``min_rows``.
 
-    2. **Probe CV** (one LLM call on a small subset): fit PromptFeatureEngineer
+    2. **Probe CV** (one LLM call on a small subset): fit SkribeFeatureEngineer
        on a stratified probe split, measure logreg CV accuracy with and without
        the engineered features. If the delta is <= ``min_delta`` (default 0.0),
        discard the probe and return X unchanged at transform time. If positive,
@@ -340,7 +340,7 @@ class AdaptiveFeatureEngineer(BaseEstimator, TransformerMixin):
         probe_score_fe_ (float): logreg CV accuracy with FE on probe.
         probe_delta_ (float): probe_score_fe_ - probe_score_base_.
         skip_reason_ (str | None): why FE was skipped, or None if it ran.
-        fe_ (PromptFeatureEngineer | None): fitted FE on full X, or None if skipped.
+        fe_ (SkribeFeatureEngineer | None): fitted FE on full X, or None if skipped.
     """
 
     def __init__(
@@ -363,9 +363,9 @@ class AdaptiveFeatureEngineer(BaseEstimator, TransformerMixin):
         self.max_train_rows = max_train_rows
         self.max_retries = max_retries
 
-    def fit(self, X: pd.DataFrame, y=None) -> "AdaptiveFeatureEngineer":
+    def fit(self, X: pd.DataFrame, y=None) -> "AdaptiveSkribeEngineer":
         if not isinstance(X, pd.DataFrame):
-            raise ValueError("AdaptiveFeatureEngineer requires a pandas DataFrame.")
+            raise ValueError("AdaptiveSkribeEngineer requires a pandas DataFrame.")
 
         self.skip_reason_: str | None = None
         self.probe_score_base_: float = float("nan")
@@ -384,7 +384,7 @@ class AdaptiveFeatureEngineer(BaseEstimator, TransformerMixin):
             return self
 
         # Stage 2: probe CV — one LLM call on a small subset
-        probe_fe = PromptFeatureEngineer(
+        probe_fe = SkribeFeatureEngineer(
             model=self.model,
             verbose=False,
             max_train_rows=self.max_train_rows,
@@ -421,7 +421,7 @@ class AdaptiveFeatureEngineer(BaseEstimator, TransformerMixin):
                 self.probe_delta_,
                 X.shape[0],
             )
-        self.fe_ = PromptFeatureEngineer(
+        self.fe_ = SkribeFeatureEngineer(
             model=self.model,
             verbose=self.verbose,
             max_train_rows=self.max_train_rows,

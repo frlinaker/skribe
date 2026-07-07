@@ -4,7 +4,7 @@
 Reads all JSON files from --output-dir/cache/ and merges them into a unified
 DataFrame.  Handles two file naming conventions:
 
-  promptlearn files : ``{dataset}-{model_id}-{hash}.json``
+  skribe files : ``{dataset}-{model_id}-{hash}.json``
       Must contain ``dataset`` and ``model_id`` keys at the top level.
 
   baseline files    : ``baselines-{dataset}-{hash}.json``
@@ -53,10 +53,10 @@ from benchmark_utils import (
     print_summary_table,
 )
 
-logger = logging.getLogger("promptlearn.progression")
+logger = logging.getLogger("skribe.progression")
 
 _BASELINE_RE = re.compile(r"^baselines-(.+)-[0-9a-f]{16}\.json$")
-_PROMPTLEARN_RE = re.compile(r"^(.+?)-(.+)-[0-9a-f]{16}\.json$")
+_SKRIBE_RE = re.compile(r"^(.+?)-(.+)-[0-9a-f]{16}\.json$")
 
 
 def load_cache_results(
@@ -77,7 +77,7 @@ def load_cache_results(
     dataset_filter:
         When given, only include records whose dataset name is in this list.
     llm_filter:
-        When given, only include promptlearn records whose ``model_id`` is in
+        When given, only include skribe records whose ``model_id`` is in
         this list.  Baseline records are always included (they are
         model-independent).
     """
@@ -106,7 +106,7 @@ def load_cache_results(
                 logger.warning("Failed to read %s: %s", path, e)
             continue
 
-        # ── promptlearn file ─────────────────────────────────────────────────
+        # ── skribe file ─────────────────────────────────────────────────
         # Skip files that start with "baselines-" (already handled above) and
         # any aggregation files like metrics_all.json.
         if fname == "metrics_all.json" or fname.startswith("baselines-"):
@@ -159,7 +159,7 @@ def main(argv=None):
         default=None,
         metavar="MODEL_ID",
         help=(
-            "LLM model IDs to include in the promptlearn rows "
+            "LLM model IDs to include in the skribe rows "
             "(default: all available in cache).  Baselines are always included."
         ),
     )
@@ -185,7 +185,7 @@ def main(argv=None):
     if not results:
         print(
             f"No cache files found in {cache_dir}.  "
-            "Run run_baselines.py and/or run_promptlearn.py first."
+            "Run run_baselines.py and/or run_skribe.py first."
         )
         return 1
 

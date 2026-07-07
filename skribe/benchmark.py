@@ -15,7 +15,7 @@ import joblib, numpy as np, pandas as pd, yaml
 import pandas.api.types as ptypes
 
 # --- Logging -----------------------------------------------------------------
-logger = logging.getLogger("promptlearn.benchmark")
+logger = logging.getLogger("skribe.benchmark")
 if not logger.handlers:
     h = logging.StreamHandler(sys.stdout)
     h.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)s: %(message)s"))
@@ -73,7 +73,7 @@ class ModelSpec:
         Est = getattr(importlib.import_module(module), cls)
         params = dict(self.params) if self.params else {}
         hint = params.pop("__pl_model_hint__", None)
-        if hint is not None and str(self.import_path).startswith("promptlearn"):
+        if hint is not None and str(self.import_path).startswith("skribe"):
             try:
                 est = Est(model=hint, **params)
                 logger.info(
@@ -94,40 +94,40 @@ def make_sklearn(name: str, import_path: str, **params) -> ModelSpec:
     return ModelSpec(name=name, import_path=import_path, params=params)
 
 
-def make_promptlearn(
+def make_skribe(
     kind: str = "classifier", name: Optional[str] = None, **params
 ) -> Optional[ModelSpec]:
     """Return a ModelSpec for the canonical PromptLearn estimators, if installed.
-    We rely on the top-level symbols exported by `promptlearn.__init__`:
-      - promptlearn.PromptClassifier
-      - promptlearn.PromptRegressor
+    We rely on the top-level symbols exported by `skribe.__init__`:
+      - skribe.SkribeClassifier
+      - skribe.SkribeRegressor
     If the package is not importable, return None gracefully.
     """
     if kind not in {"classifier", "regressor"}:
         raise ValueError("kind must be 'classifier' or 'regressor'")
     try:
-        mod = importlib.import_module("promptlearn")
+        mod = importlib.import_module("skribe")
         if kind == "classifier":
-            getattr(mod, "PromptClassifier")  # raises AttributeError if missing
-            ip = "promptlearn.PromptClassifier"
+            getattr(mod, "SkribeClassifier")  # raises AttributeError if missing
+            ip = "skribe.SkribeClassifier"
             default_name = "PromptLearnClf"
         else:
-            getattr(mod, "PromptRegressor")
-            ip = "promptlearn.PromptRegressor"
+            getattr(mod, "SkribeRegressor")
+            ip = "skribe.SkribeRegressor"
             default_name = "PromptLearnReg"
         return ModelSpec(name or default_name, ip, params)
     except Exception:
         return None
 
 
-def make_promptlearn_variant(
+def make_skribe_variant(
     kind: str, llm_name: str, name: Optional[str] = None, **params
 ) -> Optional[ModelSpec]:
     """Create a PromptLearn ModelSpec variant pinned to a specific LLM/backend.
     We attach a private param `__pl_model_hint__` that `ModelSpec.build()` uses to
     pass `model=llm_name` to the PromptLearn estimator constructor when possible.
     """
-    base = make_promptlearn(kind=kind, name=None, **params)
+    base = make_skribe(kind=kind, name=None, **params)
     if base is None:
         return None
     new_params = dict(base.params)
@@ -189,7 +189,7 @@ def default_models_for_task_type(task_type: str) -> List[ModelSpec]:
         )
         if not disable_llm:
             for llm in llm_variants:
-                pl = make_promptlearn_variant(
+                pl = make_skribe_variant(
                     "classifier", llm, name=f"PromptLearnClf[{llm}]"
                 )
                 if pl:
@@ -216,7 +216,7 @@ def default_models_for_task_type(task_type: str) -> List[ModelSpec]:
         )
         if not disable_llm:
             for llm in llm_variants:
-                pl = make_promptlearn_variant(
+                pl = make_skribe_variant(
                     "regressor", llm, name=f"PromptLearnReg[{llm}]"
                 )
                 if pl:

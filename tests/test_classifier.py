@@ -5,8 +5,8 @@ import joblib
 import os
 import tempfile
 
-from promptlearn.classifier import PromptClassifier
-from promptlearn.utils import *
+from skribe.classifier import SkribeClassifier
+from skribe.utils import *
 
 
 def is_int(val):
@@ -27,7 +27,7 @@ def test_stuff():
 
 def test_fit_predict_dataframe(sample_Xy):
     X, y = sample_Xy
-    clf = PromptClassifier()
+    clf = SkribeClassifier()
     clf.fit(X, y)
     preds = clf.predict(X)
     assert len(preds) == len(y)
@@ -36,7 +36,7 @@ def test_fit_predict_dataframe(sample_Xy):
 
 def test_fit_predict_ndarray(sample_Xy):
     X, y = sample_Xy
-    clf = PromptClassifier()
+    clf = SkribeClassifier()
     clf.fit(X.values, y.values)
     preds = clf.predict(X.values)
     assert len(preds) == len(y)
@@ -44,7 +44,7 @@ def test_fit_predict_ndarray(sample_Xy):
 
 def test_score_accuracy(sample_Xy):
     X, y = sample_Xy
-    clf = PromptClassifier()
+    clf = SkribeClassifier()
     clf.fit(X, y)
     acc = clf.score(X, y)
     assert 0.0 <= acc <= 1.0
@@ -53,7 +53,7 @@ def test_score_accuracy(sample_Xy):
 def test_zero_row_fit_predict():
     X = pd.DataFrame(columns=["x"])
     y = pd.Series(name="y", dtype=int)
-    clf = PromptClassifier()
+    clf = SkribeClassifier()
     clf.fit(X, y)
     preds = clf.predict(pd.DataFrame([{"x": 1}]))
     assert is_int(preds[0])
@@ -61,7 +61,7 @@ def test_zero_row_fit_predict():
 
 def test_predict_missing_column(sample_Xy):
     X, y = sample_Xy
-    clf = PromptClassifier()
+    clf = SkribeClassifier()
     clf.fit(X, y)
     # Remove one column
     X2 = X.copy().drop("x2", axis=1)
@@ -71,7 +71,7 @@ def test_predict_missing_column(sample_Xy):
 
 def test_predict_extra_column(sample_Xy):
     X, y = sample_Xy
-    clf = PromptClassifier()
+    clf = SkribeClassifier()
     clf.fit(X, y)
     X2 = X.copy()
     X2["extra"] = 99
@@ -80,13 +80,13 @@ def test_predict_extra_column(sample_Xy):
 
 
 def test_predict_without_fit_raises():
-    clf = PromptClassifier()
+    clf = SkribeClassifier()
     with pytest.raises(RuntimeError):
         clf.predict(pd.DataFrame({"x": [1, 2]}))
 
 
 def test_predict_invalid_type_after_fit():
-    clf = PromptClassifier()
+    clf = SkribeClassifier()
     X = pd.DataFrame({"x": [1, 2]})
     y = pd.Series([0, 1])
     clf.fit(X, y)
@@ -96,7 +96,7 @@ def test_predict_invalid_type_after_fit():
 
 def test_joblib_save_load(sample_Xy):
     X, y = sample_Xy
-    clf = PromptClassifier()
+    clf = SkribeClassifier()
     clf.fit(X, y)
     with tempfile.TemporaryDirectory() as tmpdir:
         path = os.path.join(tmpdir, "clf.joblib")
@@ -110,13 +110,13 @@ def test_construction_does_not_require_api_key(monkeypatch):
     """Credentials are resolved lazily per-provider by litellm at call time,
     so constructing an estimator must not require any API key."""
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    clf = PromptClassifier()
+    clf = SkribeClassifier()
     assert clf.predict_fn is None
 
 
 def test_fit_retries_then_succeeds(monkeypatch):
     """A function that errors when run on the sample is retried, then accepted."""
-    clf = PromptClassifier(max_retries=2)
+    clf = SkribeClassifier(max_retries=2)
     monkeypatch.setattr(clf, "_extend_code", lambda code: code)
     outputs = iter(
         [
@@ -136,7 +136,7 @@ def test_fit_retries_then_succeeds(monkeypatch):
 
 def test_fit_feedback_includes_error(monkeypatch):
     """The retry prompt carries the previous error message back to the LLM."""
-    clf = PromptClassifier(max_retries=1)
+    clf = SkribeClassifier(max_retries=1)
     monkeypatch.setattr(clf, "_extend_code", lambda code: code)
     prompts = []
     outputs = iter(
@@ -158,7 +158,7 @@ def test_fit_feedback_includes_error(monkeypatch):
 
 def test_fit_raises_after_exhausting_retries(monkeypatch):
     """When every attempt fails validation, the last error is surfaced."""
-    clf = PromptClassifier(max_retries=1)
+    clf = SkribeClassifier(max_retries=1)
     monkeypatch.setattr(clf, "_extend_code", lambda code: code)
     monkeypatch.setattr(
         clf,
@@ -171,7 +171,7 @@ def test_fit_raises_after_exhausting_retries(monkeypatch):
 
 def test_setstate_broken_code(monkeypatch):
     """Test __setstate__ with broken python_code_ triggers warning and fallback."""
-    clf = PromptClassifier()
+    clf = SkribeClassifier()
     bad_state = dict(
         python_code_="def not_valid_code !@#", predict_fn=None, model="gpt-4o"
     )
@@ -183,16 +183,16 @@ def test_setstate_broken_code(monkeypatch):
 
 def test_fit_too_many_rows(monkeypatch):
     """Test .fit() samples down if input too large."""
-    import promptlearn.utils
+    import skribe.utils
     import pandas as pd
     import numpy as np
-    from promptlearn.classifier import PromptClassifier
+    from skribe.classifier import SkribeClassifier
 
     # Patch make_predict_fn at the module level
     monkeypatch.setattr(
-        promptlearn.utils, "make_predict_fn", lambda code: lambda **features: 0
+        skribe.utils, "make_predict_fn", lambda code: lambda **features: 0
     )
-    clf = PromptClassifier(max_train_rows=5)
+    clf = SkribeClassifier(max_train_rows=5)
     # 10 rows will trigger down-sampling
     X = pd.DataFrame({"a": np.arange(10)})
     y = pd.Series(np.arange(10), name="target")
@@ -209,7 +209,7 @@ def test_fit_too_many_rows(monkeypatch):
 
 def test_fit_blank_llm_output(monkeypatch):
     """Test .fit() with empty/whitespace LLM output triggers error."""
-    clf = PromptClassifier()
+    clf = SkribeClassifier()
     X = pd.DataFrame({"a": [1, 2, 3]})
     y = pd.Series([1, 2, 3], name="target")
     monkeypatch.setattr(clf, "_call_llm", lambda prompt, web_search=False: "   \n   ")
@@ -220,15 +220,15 @@ def test_fit_blank_llm_output(monkeypatch):
 def test_fit_nonstring_llm_output(monkeypatch):
     """Test .fit() with non-string LLM output is handled robustly."""
     import pandas as pd
-    import promptlearn.utils
+    import skribe.utils
 
-    # Patch BEFORE importing PromptClassifier
+    # Patch BEFORE importing SkribeClassifier
     monkeypatch.setattr(
-        promptlearn.utils, "make_predict_fn", lambda code: lambda **features: 0
+        skribe.utils, "make_predict_fn", lambda code: lambda **features: 0
     )
-    from promptlearn.classifier import PromptClassifier
+    from skribe.classifier import SkribeClassifier
 
-    clf = PromptClassifier()
+    clf = SkribeClassifier()
     X = pd.DataFrame({"a": [1, 2, 3]})
     y = pd.Series([1, 2, 3], name="target")
     monkeypatch.setattr(clf, "_call_llm", lambda prompt, web_search=False: 12345)
@@ -239,7 +239,7 @@ def test_fit_nonstring_llm_output(monkeypatch):
 
 def test_sample_calls_llm_and_parses(monkeypatch):
     """Test .sample() exercises LLM and TSV parsing logic."""
-    clf = PromptClassifier()
+    clf = SkribeClassifier()
     # Patch _call_llm to return a simple TSV
     clf.feature_names_ = ["x1"]
     clf.target_name_ = "y"
@@ -253,7 +253,7 @@ def test_sample_calls_llm_and_parses(monkeypatch):
 
 
 def test_sample_raises_before_fit():
-    clf = PromptClassifier()
+    clf = SkribeClassifier()
     with pytest.raises(RuntimeError, match="Call fit.*before sample"):
         clf.sample(2)
 
@@ -334,7 +334,7 @@ def test_make_predict_fn_error_handling():
 
 
 def test_sample_generates_examples(monkeypatch):
-    clf = PromptClassifier()
+    clf = SkribeClassifier()
     clf.feature_names_ = ["foo", "bar"]
     clf.target_name_ = "baz"
     clf.python_code_ = "def predict(foo, bar): return 1"
@@ -411,7 +411,7 @@ def test_safe_exec_fn_non_number_string():
 def test_fit_rejects_positional_arg_missing_feature(monkeypatch):
     """predict() with fixed args that omit an expected feature must trigger a retry
     and ultimately raise with a clear message naming the missing argument."""
-    clf = PromptClassifier(model="gpt-5.4-mini", verbose=False, max_retries=0)
+    clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, max_retries=0)
     # Returns a function that only accepts 'age', missing 'income'
     monkeypatch.setattr(
         clf, "_call_llm", lambda p, web_search=False: "def predict(age): return 0"
@@ -428,7 +428,7 @@ def test_fit_rejects_positional_arg_missing_feature(monkeypatch):
 
 def test_fit_kwargs_signature_passes_validation(monkeypatch):
     """predict(**features) always passes the signature check regardless of column names."""
-    clf = PromptClassifier(model="gpt-5.4-mini", verbose=False, max_retries=0)
+    clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, max_retries=0)
     monkeypatch.setattr(
         clf,
         "_call_llm",

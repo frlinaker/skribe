@@ -5,7 +5,7 @@ import joblib
 import os
 import tempfile
 
-from promptlearn.regressor import PromptRegressor
+from skribe.regressor import SkribeRegressor
 
 
 @pytest.fixture
@@ -17,7 +17,7 @@ def sample_Xy_reg():
 
 def test_fit_predict_dataframe(sample_Xy_reg):
     X, y = sample_Xy_reg
-    reg = PromptRegressor()
+    reg = SkribeRegressor()
     reg.fit(X, y)
     preds = reg.predict(X)
     assert len(preds) == len(y)
@@ -26,7 +26,7 @@ def test_fit_predict_dataframe(sample_Xy_reg):
 
 def test_fit_predict_ndarray(sample_Xy_reg):
     X, y = sample_Xy_reg
-    reg = PromptRegressor()
+    reg = SkribeRegressor()
     reg.fit(X.values, y.values)
     preds = reg.predict(X.values)
     assert len(preds) == len(y)
@@ -34,20 +34,20 @@ def test_fit_predict_ndarray(sample_Xy_reg):
 
 def test_score_mse(sample_Xy_reg):
     X, y = sample_Xy_reg
-    reg = PromptRegressor()
+    reg = SkribeRegressor()
     reg.fit(X, y)
     mse = reg.score(X, y)
     assert isinstance(mse, float)
 
 
 def test_regressor_predict_without_fit():
-    reg = PromptRegressor()
+    reg = SkribeRegressor()
     with pytest.raises(RuntimeError):
         reg.predict(pd.DataFrame({"x": [1]}))
 
 
 def test_regressor_predict_invalid_type():
-    reg = PromptRegressor()
+    reg = SkribeRegressor()
     # Fit with dummy data first
     X = pd.DataFrame({"x": [1.0]})
     y = pd.Series([1.0], name="y")
@@ -59,7 +59,7 @@ def test_regressor_predict_invalid_type():
 
 def test_joblib_save_load(sample_Xy_reg):
     X, y = sample_Xy_reg
-    reg = PromptRegressor()
+    reg = SkribeRegressor()
     reg.fit(X, y)
     with tempfile.TemporaryDirectory() as tmpdir:
         path = os.path.join(tmpdir, "reg.joblib")

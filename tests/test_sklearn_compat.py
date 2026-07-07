@@ -1,4 +1,4 @@
-"""promptlearn estimators must satisfy the scikit-learn estimator protocol so
+"""skribe estimators must satisfy the scikit-learn estimator protocol so
 that meta-estimators (GridSearchCV, MultiOutputRegressor, ...) accept them.
 
 These checks don't fit a model, so they make no LLM calls.
@@ -15,22 +15,22 @@ from sklearn.base import (
     is_regressor,
 )
 
-from promptlearn import PromptClassifier, PromptRegressor, PromptFeatureEngineer
+from skribe import SkribeClassifier, SkribeRegressor, SkribeFeatureEngineer
 
-ALL_ESTIMATORS = [PromptClassifier, PromptRegressor, PromptFeatureEngineer]
+ALL_ESTIMATORS = [SkribeClassifier, SkribeRegressor, SkribeFeatureEngineer]
 
 
 def test_estimators_inherit_baseestimator_and_mixins():
-    assert isinstance(PromptClassifier(verbose=False), BaseEstimator)
-    assert isinstance(PromptRegressor(verbose=False), BaseEstimator)
-    assert isinstance(PromptClassifier(verbose=False), ClassifierMixin)
-    assert isinstance(PromptRegressor(verbose=False), RegressorMixin)
-    assert isinstance(PromptFeatureEngineer(verbose=False), TransformerMixin)
+    assert isinstance(SkribeClassifier(verbose=False), BaseEstimator)
+    assert isinstance(SkribeRegressor(verbose=False), BaseEstimator)
+    assert isinstance(SkribeClassifier(verbose=False), ClassifierMixin)
+    assert isinstance(SkribeRegressor(verbose=False), RegressorMixin)
+    assert isinstance(SkribeFeatureEngineer(verbose=False), TransformerMixin)
 
 
 def test_estimator_type_tags():
-    assert is_classifier(PromptClassifier(verbose=False))
-    assert is_regressor(PromptRegressor(verbose=False))
+    assert is_classifier(SkribeClassifier(verbose=False))
+    assert is_regressor(SkribeRegressor(verbose=False))
 
 
 @pytest.mark.parametrize("cls", ALL_ESTIMATORS)

@@ -1,12 +1,12 @@
 # Related Work and Novelty
 
-This document situates promptlearn in the existing literature and gives proper attribution to prior work. It is intended to inform future academic writing, README positioning, and design discussions.
+This document situates skribe in the existing literature and gives proper attribution to prior work. It is intended to inform future academic writing, README positioning, and design discussions.
 
 ---
 
 ## Core idea
 
-promptlearn treats the LLM as a **one-time code synthesizer**: at `fit()` the LLM reads a sample of training data and writes a standalone Python `predict(**features)` function. At inference, only that compiled function runs — no LLM API calls, no network, no per-row cost. The function is the complete predictor; nothing else runs on top of it.
+skribe treats the LLM as a **one-time code synthesizer**: at `fit()` the LLM reads a sample of training data and writes a standalone Python `predict(**features)` function. At inference, only that compiled function runs — no LLM API calls, no network, no per-row cost. The function is the complete predictor; nothing else runs on top of it.
 
 ---
 
@@ -15,7 +15,7 @@ promptlearn treats the LLM as a **one-time code synthesizer**: at `fit()` the LL
 ### FeatLLM
 Han et al., "Large Language Models Can Automatically Engineer Features for Few-Shot Tabular Learning", [arXiv 2404.09491](https://arxiv.org/abs/2404.09491), ICML 2024.
 
-The closest single prior work to promptlearn's core idea. FeatLLM generates Python functions (`extracting_features_no(df_input)`) that apply if/elif-style lambda conditions to create binary feature columns. No LLM is called at inference — the generated functions run as a feature transformation step. Feature names are the semantic hook: the LLM sees column names like `Age`, `Sex` and writes threshold rules directly referencing them.
+The closest single prior work to skribe's core idea. FeatLLM generates Python functions (`extracting_features_no(df_input)`) that apply if/elif-style lambda conditions to create binary feature columns. No LLM is called at inference — the generated functions run as a feature transformation step. Feature names are the semantic hook: the LLM sees column names like `Age`, `Sex` and writes threshold rules directly referencing them.
 
 **Key difference:** FeatLLM generates *feature engineering functions* (transformations to binary columns), then trains a separate linear classifier on top of the engineered features. The generated code is not the entire predictor. Not sklearn-compatible (`BaseEstimator`). No context pre-pass, extend pass, error-feedback retry, SHAP explain, or joblib serialization.
 
@@ -58,7 +58,7 @@ LLM synthesizes Python implementations of semantic data operators declared in na
 
 ## LLM-as-direct-predictor (inference-time LLM — architecturally opposite)
 
-All of the following call the LLM on every inference row. They are the dominant prior paradigm and represent the tradeoff that promptlearn specifically avoids.
+All of the following call the LLM on every inference row. They are the dominant prior paradigm and represent the tradeoff that skribe specifically avoids.
 
 - **LIFT** — Dinh, Zeng et al., "LIFT: Language-Interfaced Fine-Tuning for Non-language Machine Learning Tasks", [NeurIPS 2022](https://proceedings.nips.cc/paper_files/paper/2022/hash/4ce7fe1d2730f53cb3857032952cd1b8-Abstract-Conference.html). Fine-tunes LLM to predict tabular labels; LLM runs at inference.
 - **TABLET** — Slack et al., "TABLET: Learning From Instructions For Tabular Data", [arXiv 2304.13188](https://arxiv.org/abs/2304.13188). LLM called per row with natural-language instructions.
@@ -81,12 +81,12 @@ Transformer pre-trained on synthetic data; uses in-context learning at inference
 
 ---
 
-## What is novel in promptlearn
+## What is novel in skribe
 
 The following combination of properties has no prior art that bundles all of them:
 
 **1. The LLM writes a complete standalone `predict(**features)` that is the entire model.**
-FeatLLM and CAAFE come closest but both generate feature-engineering functions that feed a separate downstream classifier. The generated code in promptlearn *is* the predictor — nothing else runs on top of it.
+FeatLLM and CAAFE come closest but both generate feature-engineering functions that feed a separate downstream classifier. The generated code in skribe *is* the predictor — nothing else runs on top of it.
 
 **2. True zero-cost inference.**
 The compiled function is pure Python: no imports beyond the standard library, no network, no GPU. Inference is microseconds per row regardless of training set size. FeatLLM eliminates the per-row LLM call but still runs a linear classifier; CAAFE runs a full sklearn model.
@@ -104,7 +104,7 @@ Three sequential LLM calls: (a) context pre-pass summarizes the dataset and deco
 The LLM can query the web during `fit()` to look up domain schemas — ICD codes, airport codes, chess notation, NAICS codes — and build richer lookup tables in the generated function. No prior tabular ML system does this.
 
 **7. `explain()` and `explain_comparison()`.**
-SHAP KernelExplainer over the compiled predict function, with LLM-generated narrative. `explain_comparison()` runs contrastive SHAP importance across multiple fitted models (including non-promptlearn baselines) and generates a plain-English explanation of *why* they differ. This is novel as a post-hoc interpretability layer specifically designed for synthesized-code predictors.
+SHAP KernelExplainer over the compiled predict function, with LLM-generated narrative. `explain_comparison()` runs contrastive SHAP importance across multiple fitted models (including non-skribe baselines) and generates a plain-English explanation of *why* they differ. This is novel as a post-hoc interpretability layer specifically designed for synthesized-code predictors.
 
 ---
 
@@ -112,7 +112,7 @@ SHAP KernelExplainer over the compiled predict function, with LLM-generated narr
 
 | System | Standalone predict fn | No LLM at inference | sklearn BaseEstimator | Code-string serialization | Multi-pass fit | Web search at fit | explain_comparison |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| **promptlearn** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| **skribe** | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | FeatLLM | — | ✓ | — | — | — | — | — |
 | CAAFE | — | partial | ✓ (wrapper) | — | — | — | — |
 | Talking Trees | — | ✓ | partial | — | — | — | — |

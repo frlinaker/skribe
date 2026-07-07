@@ -5,11 +5,11 @@ import pandas as pd
 from sklearn.base import RegressorMixin
 from sklearn.metrics import r2_score
 
-from .base import BasePromptEstimator, resolve_model
+from .base import BaseSkribeEstimator, resolve_model
 from .prompt_markers import DATA_MARKER
 from .utils import generate_feature_dicts, safe_regress
 
-logger = logging.getLogger("promptlearn")
+logger = logging.getLogger("skribe")
 
 DEFAULT_REGRESSION_PROMPT_TEMPLATE = (
 """
@@ -36,7 +36,7 @@ Only output valid Python code, no markdown or explanations.
 )
 
 
-class PromptRegressor(RegressorMixin, BasePromptEstimator):
+class SkribeRegressor(RegressorMixin, BaseSkribeEstimator):
     def __init__(
         self,
         model=None,
@@ -59,7 +59,7 @@ class PromptRegressor(RegressorMixin, BasePromptEstimator):
 
     def fit(
         self, X, y, synthetic_features=None, dataset_description=None
-    ) -> "PromptRegressor":
+    ) -> "SkribeRegressor":
         return super()._fit(
             X,
             y,

@@ -1,17 +1,17 @@
-"""Command-line interface for promptlearn.
+"""Command-line interface for skribe.
 
 Usage
 -----
-    promptlearn fit mydata.csv --target label
-    promptlearn fit mydata.csv --target label --model gpt-5.5 --task regression
-    promptlearn fit mydata.csv --target label --test-size 0.2 --verbose
+    skribe fit mydata.csv --target label
+    skribe fit mydata.csv --target label --model gpt-5.5 --task regression
+    skribe fit mydata.csv --target label --test-size 0.2 --verbose
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
-from promptlearn import PromptClassifier, PromptRegressor
+from skribe import SkribeClassifier, SkribeRegressor
 
 
 def _load_csv(path: str):
@@ -113,7 +113,7 @@ def cmd_fit(args: argparse.Namespace) -> int:
     print()
 
     if task == "classification":
-        clf = PromptClassifier(model=args.model, verbose=args.verbose)
+        clf = SkribeClassifier(model=args.model, verbose=args.verbose)
         clf.fit(X_train, y_train)
 
         train_pred = clf.predict(X_train)
@@ -126,7 +126,7 @@ def cmd_fit(args: argparse.Namespace) -> int:
             print(f"test  accuracy: {test_acc:.4f}")
 
     elif task == "regression":
-        reg = PromptRegressor(model=args.model, verbose=args.verbose)
+        reg = SkribeRegressor(model=args.model, verbose=args.verbose)
         reg.fit(X_train, y_train)
 
         train_pred = reg.predict(X_train)
@@ -150,7 +150,7 @@ def cmd_fit(args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        prog="promptlearn",
+        prog="skribe",
         description="LLM-powered zero-shot classification and regression",
     )
     sub = parser.add_subparsers(dest="command")
@@ -163,7 +163,7 @@ def main(argv: list[str] | None = None) -> int:
     fit_p.add_argument(
         "--model",
         default=None,
-        help="LLM model ID (default: uses PROMPTLEARN_MODEL env or gpt-4o)",
+        help="LLM model ID (default: uses SKRIBE_MODEL env or gpt-4o)",
     )
     fit_p.add_argument(
         "--task",

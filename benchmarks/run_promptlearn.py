@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Run promptlearn on the curated OpenML suite for one LLM model.
+"""Run skribe on the curated OpenML suite for one LLM model.
 
 Results are written to --output-dir/cache/ as JSON files named
 ``{dataset}-{model_id}-{hash}.json``.  These files are later read by
@@ -10,16 +10,16 @@ This script does NOT run any baselines.  Use run_baselines.py for those.
 Examples
 --------
     # run GPT-5.5 on the full suite
-    python benchmarks/run_promptlearn.py --llm gpt-5.5
+    python benchmarks/run_skribe.py --llm gpt-5.5
 
     # run GPT-5.5 with web search enabled on two datasets
-    python benchmarks/run_promptlearn.py --llm gpt-5.5+web --datasets adult credit-g
+    python benchmarks/run_skribe.py --llm gpt-5.5+web --datasets adult credit-g
 
-    # use AdaptiveFeatureEngineer with a different model
-    python benchmarks/run_promptlearn.py --llm gpt-5.5 --fe-model gpt-5.4-mini
+    # use AdaptiveSkribeEngineer with a different model
+    python benchmarks/run_skribe.py --llm gpt-5.5 --fe-model gpt-5.4-mini
 
     # see all available model IDs
-    python benchmarks/run_promptlearn.py --list-models
+    python benchmarks/run_skribe.py --list-models
 """
 
 from __future__ import annotations
@@ -53,7 +53,7 @@ from benchmark_utils import (
 import numpy as np
 from sklearn.model_selection import train_test_split
 
-logger = logging.getLogger("promptlearn.progression")
+logger = logging.getLogger("skribe.progression")
 
 _MODEL_LOOKUP = {m["model_id"]: m for m in MODEL_PROGRESSION}
 
@@ -79,7 +79,7 @@ def run_dataset_model(
     skip_cache_read: bool = False,
     skip_context: bool = False,
 ) -> dict:
-    """Run promptlearn on one (dataset, model) cell.
+    """Run skribe on one (dataset, model) cell.
 
     Parameters
     ----------
@@ -96,9 +96,9 @@ def run_dataset_model(
     vertex_region:
         Overrides ``VERTEXAI_LOCATION`` env var for this call (restored afterwards).
     fe_model:
-        LLM model id for AdaptiveFeatureEngineer.  ``None`` disables FE.
+        LLM model id for AdaptiveSkribeEngineer.  ``None`` disables FE.
     web_search:
-        Pass ``web_search=True`` to PromptClassifier.fit().
+        Pass ``web_search=True`` to SkribeClassifier.fit().
     base_model_id:
         Actual LLM model id when ``model_id`` is a synthetic key like
         ``"gpt-5.5+web"``.  Stripped from model_id when ``None`` and
@@ -110,7 +110,7 @@ def run_dataset_model(
     Returns
     -------
     dict
-        Metrics dict with keys ``dataset``, ``model_id``, ``promptlearn``, etc.
+        Metrics dict with keys ``dataset``, ``model_id``, ``skribe``, etc.
     """
     # For web-search variants the model_id is a synthetic key (e.g. "gpt-5.5+web");
     # the actual LLM call uses base_model_id when provided, else strips the +web suffix.
@@ -157,14 +157,14 @@ def run_dataset_model(
         "class_map": class_map,
     }
 
-    # Lazy import — only run_promptlearn.py touches promptlearn.
-    from promptlearn import AdaptiveFeatureEngineer, PromptClassifier
+    # Lazy import — only run_skribe.py touches skribe.
+    from skribe import AdaptiveSkribeEngineer, SkribeClassifier
 
     # Optional feature engineering pass before the classifier.
     if fe_model:
-        _print(f"{tag} running AdaptiveFeatureEngineer ({fe_model})…")
+        _print(f"{tag} running AdaptiveSkribeEngineer ({fe_model})…")
         try:
-            fe_step = AdaptiveFeatureEngineer(model=fe_model, verbose=False)
+            fe_step = AdaptiveSkribeEngineer(model=fe_model, verbose=False)
             X_train = fe_step.fit_transform(X_train, y_train)
             X_test = fe_step.transform(X_test)
             skip = getattr(fe_step, "skip_reason_", None)
@@ -178,10 +178,10 @@ def run_dataset_model(
         except Exception as e:
             _print(f"{tag} AdaptiveFE FAILED: {e}  (using original features)")
 
-    # ── promptlearn ───────────────────────────────────────────────────────────
+    # ── skribe ───────────────────────────────────────────────────────────
     t0 = time.time()
     try:
-        clf = PromptClassifier(
+        clf = SkribeClassifier(
             model=actual_model_id,
             verbose=False,
             web_search=web_search,
@@ -234,26 +234,26 @@ def run_dataset_model(
                 y_proba = clf.predict_proba(X_test)
             except Exception:
                 pass
-        result["promptlearn"] = _rich_metrics(
+        result["skribe"] = _rich_metrics(
             np.array(y_test), y_pred, y_proba, n_classes
         )
-        result["promptlearn"]["fit_time_s"] = round(fit_elapsed, 2)
-        result["promptlearn"]["prepass_time_s"] = round(_prepass_time[0], 2)
-        result["promptlearn"]["predict_time_s"] = round(predict_elapsed, 4)
-        result["promptlearn"]["generated_code"] = clf.raw_python_code_
-        result["promptlearn"]["fit_prompt"] = getattr(clf, "fit_prompt_", None)
-        result["promptlearn"]["context_prepass_prompt"] = getattr(clf, "context_prepass_prompt_", None)
-        result["promptlearn"]["context_summary"] = getattr(clf, "context_summary_", None)
-        acc = result["promptlearn"]["accuracy"]
+        result["skribe"]["fit_time_s"] = round(fit_elapsed, 2)
+        result["skribe"]["prepass_time_s"] = round(_prepass_time[0], 2)
+        result["skribe"]["predict_time_s"] = round(predict_elapsed, 4)
+        result["skribe"]["generated_code"] = clf.raw_python_code_
+        result["skribe"]["fit_prompt"] = getattr(clf, "fit_prompt_", None)
+        result["skribe"]["context_prepass_prompt"] = getattr(clf, "context_prepass_prompt_", None)
+        result["skribe"]["context_summary"] = getattr(clf, "context_summary_", None)
+        acc = result["skribe"]["accuracy"]
         _print(f"{tag} accuracy={acc:.3f}  fit={fit_elapsed:.1f}s  predict={predict_elapsed:.4f}s  ✓")
     except Exception as e:
         elapsed = time.time() - t0
         _print(f"{tag} FAILED after {elapsed:.1f}s: {e}")
-        result["promptlearn"] = {"error": str(e)}
+        result["skribe"] = {"error": str(e)}
 
     # Only cache successful results — errors are not cached so re-running the
     # script automatically retries failed datasets without manual cache cleanup.
-    pl = result.get("promptlearn", {})
+    pl = result.get("skribe", {})
     if cache_file and not (isinstance(pl, dict) and pl.get("error")):
         cache_dir.mkdir(parents=True, exist_ok=True)
         with open(cache_file, "w") as f:
@@ -317,8 +317,8 @@ def main(argv=None):
         default=None,
         metavar="MODEL_ID",
         help=(
-            "LLM to use for AdaptiveFeatureEngineer (e.g. gpt-5.5). "
-            "Applied before PromptClassifier.  Omit to disable FE."
+            "LLM to use for AdaptiveSkribeEngineer (e.g. gpt-5.5). "
+            "Applied before SkribeClassifier.  Omit to disable FE."
         ),
     )
     args = parser.parse_args(argv)
@@ -341,12 +341,12 @@ def main(argv=None):
             f"Use --list-models to see all options."
         )
 
-    # Route our own logger to stdout; suppress promptlearn's internal logger
+    # Route our own logger to stdout; suppress skribe's internal logger
     # (key events are printed directly via _print instead).
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(logging.Formatter("[%(asctime)s] %(message)s"))
     logging.basicConfig(handlers=[handler], level=logging.INFO)
-    logging.getLogger("promptlearn").setLevel(logging.WARNING)
+    logging.getLogger("skribe").setLevel(logging.WARNING)
     logger.setLevel(logging.INFO)
 
     output_dir = Path(args.output_dir)
@@ -368,7 +368,7 @@ def main(argv=None):
         return 1
 
     print(
-        f"Running promptlearn  model={label!r}  datasets={datasets_to_run}  "
+        f"Running skribe  model={label!r}  datasets={datasets_to_run}  "
         f"max_rows={args.max_rows}  fe_model={args.fe_model or 'none'}  "
         f"cache={cache_dir}{'  (skip-read)' if args.no_cache else ''}",
         flush=True,
@@ -407,7 +407,7 @@ def main(argv=None):
             try:
                 r = future.result()
                 results.append(r)
-                pl = r.get("promptlearn", {})
+                pl = r.get("skribe", {})
                 if pl.get("error"):
                     _print(
                         f"\n✗ {dataset} FAILED ({completed[0]}/{n_total} done): {pl['error']}"
@@ -421,17 +421,17 @@ def main(argv=None):
             except Exception as e:
                 _print(f"\n✗ {dataset} FATAL ({completed[0]}/{n_total} done): {e}")
 
-    succeeded = [r for r in results if not r.get("promptlearn", {}).get("error")]
-    failed = [r for r in results if r.get("promptlearn", {}).get("error")]
+    succeeded = [r for r in results if not r.get("skribe", {}).get("error")]
+    failed = [r for r in results if r.get("skribe", {}).get("error")]
     _print(f"\n{'─'*60}")
     _print(f"Done: {len(succeeded)}/{n_total} succeeded  {len(failed)} failed  model={label!r}")
     if succeeded:
-        accs = [r["promptlearn"]["accuracy"] for r in succeeded]
+        accs = [r["skribe"]["accuracy"] for r in succeeded]
         _print(f"Accuracy — mean={sum(accs)/len(accs):.3f}  min={min(accs):.3f}  max={max(accs):.3f}")
     if failed:
         _print("Failed datasets:")
         for r in failed:
-            _print(f"  {r['dataset']}: {r['promptlearn']['error']}")
+            _print(f"  {r['dataset']}: {r['skribe']['error']}")
     return 0
 
 

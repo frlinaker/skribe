@@ -1,8 +1,8 @@
 """Run several models on one dataset and compare them side by side.
 
-``compare_models`` fits any mix of promptlearn estimators and plain
+``compare_models`` fits any mix of skribe estimators and plain
 scikit-learn / XGBoost estimators on the same train/test split and returns two
-tables: per-model metrics, and per-row predictions. promptlearn estimators are
+tables: per-model metrics, and per-row predictions. skribe estimators are
 handed the raw DataFrame (they reason over column names and values directly),
 while plain estimators are auto-wrapped in a one-hot + scaling pipeline so they
 accept the same input.
@@ -29,10 +29,10 @@ from sklearn.metrics import accuracy_score, f1_score, mean_squared_error, r2_sco
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-from .base import BasePromptEstimator
+from .base import BaseSkribeEstimator
 from .explain import Explanation
 
-logger = logging.getLogger("promptlearn")
+logger = logging.getLogger("skribe")
 
 _METRIC_COLUMNS = {
     "classification": ["accuracy", "f1_macro"],
@@ -52,7 +52,7 @@ def _infer_task(y) -> str:
 
 def _wrap_for_sklearn(estimator, X: pd.DataFrame) -> Pipeline:
     """Pipe a plain estimator through one-hot + scaling so it accepts the same
-    raw DataFrame the promptlearn estimators get."""
+    raw DataFrame the skribe estimators get."""
     numeric = X.select_dtypes(include="number").columns.tolist()
     categorical = [c for c in X.columns if c not in numeric]
     steps = []
@@ -79,7 +79,7 @@ def compare_models(models, X_train, y_train, X_test, y_test, task=None):
     Parameters
     ----------
     models : dict[str, estimator]
-        Named estimators. promptlearn estimators receive the raw DataFrame;
+        Named estimators. skribe estimators receive the raw DataFrame;
         plain sklearn/xgboost estimators are auto-wrapped in a one-hot +
         scaling pipeline so they accept the same input.
     X_train, y_train, X_test, y_test : array-like / DataFrame / Series
@@ -108,9 +108,9 @@ def compare_models(models, X_train, y_train, X_test, y_test, task=None):
     predictions = pd.DataFrame({"y_true": y_test})
 
     for name, estimator in models.items():
-        is_prompt = isinstance(estimator, BasePromptEstimator)
-        # promptlearn estimators and pre-built Pipelines (e.g. a
-        # PromptFeatureEngineer + classifier) accept the raw DataFrame as-is;
+        is_prompt = isinstance(estimator, BaseSkribeEstimator)
+        # skribe estimators and pre-built Pipelines (e.g. a
+        # SkribeFeatureEngineer + classifier) accept the raw DataFrame as-is;
         # only bare sklearn/xgboost estimators get the one-hot wrapper.
         if is_prompt or isinstance(estimator, Pipeline):
             model = estimator
@@ -252,7 +252,7 @@ def _build_comparison_prompt(
         "Write a comparison covering:",
         "1. Which model performs best and by how much.",
         "2. Which features each model relies on most — and whether they agree.",
-        "3. For any promptlearn model whose code is shown: what explicit rules or "
+        "3. For any skribe model whose code is shown: what explicit rules or "
         "domain knowledge the code encodes that statistical models cannot capture.",
         "4. A hypothesis for why the best model outperforms the others on this dataset.",
         "Be specific and faithful to the numbers and code above. "
@@ -291,7 +291,7 @@ def explain_comparison(
         Free-text context passed to the LLM narrator.
     llm_model : str, optional
         LiteLLM model ID for the narrative call.  Defaults to the model of
-        the first promptlearn estimator found, then ``DEFAULT_MODEL``.
+        the first skribe estimator found, then ``DEFAULT_MODEL``.
 
     Returns
     -------
@@ -306,14 +306,14 @@ def explain_comparison(
     task = task or _infer_task(y_test)
 
     # --- resolve LLM caller ---
-    llm_caller: Optional[BasePromptEstimator] = None
+    llm_caller: Optional[BaseSkribeEstimator] = None
     for est in models.values():
-        if isinstance(est, BasePromptEstimator):
+        if isinstance(est, BaseSkribeEstimator):
             llm_caller = est
             break
     if llm_caller is None:
         # Synthesize a minimal caller just for _call_llm
-        llm_caller = BasePromptEstimator(model=llm_model or DEFAULT_MODEL, verbose=False, max_train_rows=None)
+        llm_caller = BaseSkribeEstimator(model=llm_model or DEFAULT_MODEL, verbose=False, max_train_rows=None)
 
     if llm_model:
         llm_caller.model = llm_model
@@ -392,7 +392,7 @@ def explain_comparison(
             lines.append(f"\nExample disagreement rows (up to 5):\n{sample.to_string()}")
         disagreement_summary = "\n".join(lines)
 
-    # --- collect generated code from promptlearn estimators ---
+    # --- collect generated code from skribe estimators ---
     codes = {}
     for name, est in models.items():
         code = getattr(est, "python_code_", None)

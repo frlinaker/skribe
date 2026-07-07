@@ -8,7 +8,7 @@ import pandas as pd
 
 from typing import Any, Callable, Dict, Type
 
-logger = logging.getLogger("promptlearn")
+logger = logging.getLogger("skribe")
 
 
 # Helper for robust Python identifier normalization

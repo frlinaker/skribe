@@ -12,8 +12,8 @@ Covers:
 import pandas as pd
 import pytest
 
-from promptlearn import PromptClassifier, PromptRegressor
-from promptlearn.prompt_markers import CONTEXT_END, CONTEXT_START, DATA_MARKER
+from skribe import SkribeClassifier, SkribeRegressor
+from skribe.prompt_markers import CONTEXT_END, CONTEXT_START, DATA_MARKER
 
 SIMPLE_CODE = "def predict(**f): return 0"
 
@@ -30,7 +30,7 @@ def test_marker_values():
 
 
 def test_classifier_template_uses_data_marker():
-    from promptlearn.classifier import DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE
+    from skribe.classifier import DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE
 
     assert DATA_MARKER in DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE
     # Must not hard-code a different string
@@ -38,7 +38,7 @@ def test_classifier_template_uses_data_marker():
 
 
 def test_regressor_template_uses_data_marker():
-    from promptlearn.regressor import DEFAULT_REGRESSION_PROMPT_TEMPLATE
+    from skribe.regressor import DEFAULT_REGRESSION_PROMPT_TEMPLATE
 
     assert DATA_MARKER in DEFAULT_REGRESSION_PROMPT_TEMPLATE
     assert "Data:\n" in DEFAULT_REGRESSION_PROMPT_TEMPLATE
@@ -51,7 +51,7 @@ def test_regressor_template_uses_data_marker():
 
 def test_fit_prompt_marker_order_with_context(monkeypatch):
     """Instructions < CONTEXT_START < CONTEXT_END < DATA_MARKER."""
-    clf = PromptClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=False)
+    clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=False)
     monkeypatch.setattr(clf, "_call_llm", lambda p, web_search=False: SIMPLE_CODE)
 
     X = pd.DataFrame({"age": [25, 40], "income": [30000, 80000]})
@@ -70,7 +70,7 @@ def test_fit_prompt_marker_order_with_context(monkeypatch):
 
 def test_fit_prompt_no_context_still_has_data_marker(monkeypatch):
     """Without a description, CONTEXT_START/END are absent but DATA_MARKER is still present."""
-    clf = PromptClassifier(model="gpt-5.4-mini", verbose=False)
+    clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False)
     monkeypatch.setattr(clf, "_call_llm", lambda p, web_search=False: SIMPLE_CODE)
 
     X = pd.DataFrame({"x": [1, 2]})
@@ -85,7 +85,7 @@ def test_fit_prompt_no_context_still_has_data_marker(monkeypatch):
 
 def test_fit_prompt_contains_no_unresolved_placeholders(monkeypatch):
     """No __PLACEHOLDER__ tokens should survive into the final prompt."""
-    clf = PromptClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=False)
+    clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=False)
     monkeypatch.setattr(clf, "_call_llm", lambda p, web_search=False: SIMPLE_CODE)
 
     X = pd.DataFrame({"age": [25, 40]})
@@ -98,7 +98,7 @@ def test_fit_prompt_contains_no_unresolved_placeholders(monkeypatch):
 
 
 def test_regressor_fit_prompt_marker_order(monkeypatch):
-    reg = PromptRegressor(model="gpt-5.4-mini", verbose=False, context_prepass=False)
+    reg = SkribeRegressor(model="gpt-5.4-mini", verbose=False, context_prepass=False)
     monkeypatch.setattr(reg, "_call_llm", lambda p, web_search=False: "def predict(**f): return 1.0")
 
     X = pd.DataFrame({"height": [1.0, 2.0]})
@@ -116,7 +116,7 @@ def test_regressor_fit_prompt_marker_order(monkeypatch):
 
 def test_prepass_prompt_forbids_markdown(monkeypatch):
     """The pre-pass prompt must explicitly prohibit markdown formatting."""
-    clf = PromptClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
+    clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
     monkeypatch.setattr(clf, "_call_llm", lambda p, web_search=False: SIMPLE_CODE)
 
     X = pd.DataFrame({"age": [25, 40, 35], "income": [30000, 80000, 50000]})
@@ -132,7 +132,7 @@ def test_prepass_prompt_forbids_markdown(monkeypatch):
 
 def test_prepass_prompt_says_downstream_prompt(monkeypatch):
     """Pre-pass prompt must tell the LLM its output will be used in a downstream prompt."""
-    clf = PromptClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
+    clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
     monkeypatch.setattr(clf, "_call_llm", lambda p, web_search=False: SIMPLE_CODE)
 
     X = pd.DataFrame({"age": [25, 40, 35]})
@@ -144,7 +144,7 @@ def test_prepass_prompt_says_downstream_prompt(monkeypatch):
 
 def test_prepass_prompt_forbids_fences(monkeypatch):
     """Pre-pass prompt must explicitly ban code fences."""
-    clf = PromptClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
+    clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
     monkeypatch.setattr(clf, "_call_llm", lambda p, web_search=False: SIMPLE_CODE)
 
     X = pd.DataFrame({"age": [25, 40]})
@@ -161,7 +161,7 @@ def test_prepass_prompt_forbids_fences(monkeypatch):
 
 def test_prepass_value_summary_shows_all_values(monkeypatch):
     """All unique values per column appear in the pre-pass prompt — no cap."""
-    clf = PromptClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
+    clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
     monkeypatch.setattr(
         clf, "_call_llm",
         lambda p, web_search=False: "def predict(**f): return int(int(f.get('val', 0)) > 14)"
@@ -179,7 +179,7 @@ def test_prepass_value_summary_shows_all_values(monkeypatch):
 
 def test_prepass_value_summary_no_ellipsis_when_few_values(monkeypatch):
     """Columns with few unique values appear without truncation."""
-    clf = PromptClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
+    clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
     monkeypatch.setattr(clf, "_call_llm", lambda p, web_search=False: SIMPLE_CODE)
 
     X = pd.DataFrame({"code": list("abcde"), "val": range(5)})

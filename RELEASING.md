@@ -1,12 +1,12 @@
-# Releasing promptlearn
+# Releasing skribe
 
 How to cut a new release to GitHub and PyPI. Versioning follows
 [SemVer](https://semver.org/); the single source of truth is
-`promptlearn/version.py`.
+`skribe/version.py`.
 
 ## 1. Prepare the release commit
 
-1. Bump `__version__` in `promptlearn/version.py`.
+1. Bump `__version__` in `skribe/version.py`.
 2. Add a dated section to `CHANGELOG.md` (Added / Changed / Fixed).
 3. Update "Current stable release" in `ROADMAP.md`.
 4. Commit. The pre-commit gate runs `black` and the full live-LLM test suite
@@ -14,7 +14,7 @@ How to cut a new release to GitHub and PyPI. Versioning follows
    set in the environment.
 
 ```bash
-git add promptlearn/version.py CHANGELOG.md ROADMAP.md
+git add skribe/version.py CHANGELOG.md ROADMAP.md
 git commit -m "Release vX.Y.Z: <summary>"
 ```
 
@@ -37,7 +37,7 @@ present at upload time (avoids accidentally re-uploading older builds):
 
 `MANIFEST.in` keeps local-only / secret-bearing files (`.env`, `.envrc`,
 `.cursorrules`, `.claude/`) out of the source distribution, and
-`setup.py` (`find_packages(exclude=[...])`) ensures only the `promptlearn`
+`setup.py` (`find_packages(exclude=[...])`) ensures only the `skribe`
 package is shipped — not `tests/` or `examples/`.
 
 ## 4. Validate before uploading
@@ -46,7 +46,7 @@ package is shipped — not `tests/` or `examples/`.
 .venv/bin/twine check release-vX.Y.Z/*
 ```
 
-Optional sanity check that the wheel ships only `promptlearn` and no secrets:
+Optional sanity check that the wheel ships only `skribe` and no secrets:
 
 ```bash
 .venv/bin/python - <<'PY'
@@ -68,7 +68,7 @@ flags are needed:
 .venv/bin/twine upload release-vX.Y.Z/*
 ```
 
-The token is project-scoped to `promptlearn`, so this default only authorizes
+The token is project-scoped to `skribe`, so this default only authorizes
 uploading this package. **Never commit the token or `~/.pypirc`.** If a token is
 ever exposed (e.g. pasted on a command line), revoke it at
 <https://pypi.org/manage/account/token/> and issue a fresh one.
@@ -78,7 +78,7 @@ ever exposed (e.g. pasted on a command line), revoke it at
 ```bash
 .venv/bin/python - <<'PY'
 import urllib.request, json
-d = json.load(urllib.request.urlopen("https://pypi.org/pypi/promptlearn/json", timeout=20))
+d = json.load(urllib.request.urlopen("https://pypi.org/pypi/skribe/json", timeout=20))
 print("latest on PyPI:", d["info"]["version"])
 PY
 ```

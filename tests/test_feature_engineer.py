@@ -1,4 +1,4 @@
-"""Tests for PromptFeatureEngineer and AdaptiveFeatureEngineer.
+"""Tests for SkribeFeatureEngineer and AdaptiveSkribeEngineer.
 
 The mocked tests stub the two LLM touchpoints (``_call_llm`` and
 ``_extend_code``) so they run without network. One live smoke test exercises a
@@ -14,7 +14,7 @@ import pytest
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 
-from promptlearn import AdaptiveFeatureEngineer, PromptFeatureEngineer
+from skribe import AdaptiveSkribeEngineer, SkribeFeatureEngineer
 
 # A simple, valid transform the mocked LLM "returns".
 GOOD_CODE = (
@@ -43,7 +43,7 @@ def Xy():
 
 def test_fit_transform_appends_features(Xy):
     X, y = Xy
-    fe = _mock(PromptFeatureEngineer(verbose=False)).fit(X, y)
+    fe = _mock(SkribeFeatureEngineer(verbose=False)).fit(X, y)
     assert fe.new_feature_names_ == ["gdp_per_capita", "is_adult"]
     out = fe.transform(X)
     # original columns preserved, new ones appended
@@ -55,26 +55,26 @@ def test_fit_transform_appends_features(Xy):
 
 def test_fit_unsupervised_without_y(Xy):
     X, _ = Xy
-    fe = _mock(PromptFeatureEngineer(verbose=False)).fit(X)
+    fe = _mock(SkribeFeatureEngineer(verbose=False)).fit(X)
     assert fe.target_name_ is None
     assert "gdp_per_capita" in fe.transform(X).columns
 
 
 def test_transform_before_fit_raises():
     with pytest.raises(RuntimeError, match="fit"):
-        PromptFeatureEngineer(verbose=False).transform(pd.DataFrame({"a": [1]}))
+        SkribeFeatureEngineer(verbose=False).transform(pd.DataFrame({"a": [1]}))
 
 
 def test_requires_dataframe(Xy):
     _, y = Xy
-    fe = _mock(PromptFeatureEngineer(verbose=False))
+    fe = _mock(SkribeFeatureEngineer(verbose=False))
     with pytest.raises(ValueError, match="DataFrame"):
         fe.fit(np.array([[1, 2], [3, 4]]), y)
 
 
 def test_transform_row_failure_yields_nan(Xy):
     X, y = Xy
-    fe = _mock(PromptFeatureEngineer(verbose=False)).fit(X, y)
+    fe = _mock(SkribeFeatureEngineer(verbose=False)).fit(X, y)
     # Replace the compiled fn with one that raises, to exercise the safe path.
     fe.predict_fn = lambda **f: (_ for _ in ()).throw(RuntimeError("boom"))
     out = fe.transform(X)
@@ -83,7 +83,7 @@ def test_transform_row_failure_yields_nan(Xy):
 
 def test_validation_rejects_nondict_output(Xy):
     X, y = Xy
-    fe = _mock(PromptFeatureEngineer(verbose=False, max_retries=0))
+    fe = _mock(SkribeFeatureEngineer(verbose=False, max_retries=0))
     fe._call_llm = (
         lambda prompt, web_search=False: "def transform(**features):\n    return 42\n"
     )
@@ -93,7 +93,7 @@ def test_validation_rejects_nondict_output(Xy):
 
 def test_validation_rejects_inconsistent_keys(Xy):
     X, y = Xy
-    fe = _mock(PromptFeatureEngineer(verbose=False, max_retries=0))
+    fe = _mock(SkribeFeatureEngineer(verbose=False, max_retries=0))
     code = (
         "def transform(**features):\n"
         "    age = float(features.get('age', 0) or 0)\n"
@@ -106,7 +106,7 @@ def test_validation_rejects_inconsistent_keys(Xy):
 
 def test_pipeline_with_downstream_model(Xy):
     X, y = Xy
-    fe = _mock(PromptFeatureEngineer(verbose=False)).fit(X, y)
+    fe = _mock(SkribeFeatureEngineer(verbose=False)).fit(X, y)
     # Use only the engineered numeric features downstream.
     engineered = fe.transform(X)[fe.new_feature_names_]
     clf = LogisticRegression().fit(engineered, y)
@@ -117,7 +117,7 @@ def test_joblib_roundtrip_recompiles(Xy):
     X, _ = Xy
     # Build fitted state directly (no instance-level mocks that would pollute
     # __dict__ and break pickling).
-    fe = PromptFeatureEngineer(verbose=False)
+    fe = SkribeFeatureEngineer(verbose=False)
     fe.feature_names_ = ["country", "age"]
     fe.target_name_ = "label"
     fe.raw_python_code_ = GOOD_CODE
@@ -143,7 +143,7 @@ def test_live_feature_engineering():
         }
     )
     y = pd.Series([1, 0, 1, 0], name="label")
-    fe = PromptFeatureEngineer(verbose=False).fit(X, y)
+    fe = SkribeFeatureEngineer(verbose=False).fit(X, y)
     out = fe.transform(X)
     # New columns were added, original rows preserved.
     assert len(out) == len(X)
@@ -152,15 +152,15 @@ def test_live_feature_engineering():
 
 
 # ---------------------------------------------------------------------------
-# AdaptiveFeatureEngineer tests
+# AdaptiveSkribeEngineer tests
 # ---------------------------------------------------------------------------
 
 
 # Patch _probe_fe_delta so tests run without LLM calls.
 # Returns (score_base, score_fe, probe_n).
 def _patch_probe(afe, score_base, score_fe):
-    """Inject a fake probe result into an AdaptiveFeatureEngineer instance."""
-    import promptlearn.feature_engineer as _fem
+    """Inject a fake probe result into an AdaptiveSkribeEngineer instance."""
+    import skribe.feature_engineer as _fem
 
     def _fake_probe(X, y, fe, cv, probe_size):
         return score_base, score_fe, min(40, len(X))
@@ -169,7 +169,7 @@ def _patch_probe(afe, score_base, score_fe):
     return afe
 
 
-class _MockedAFE(AdaptiveFeatureEngineer):
+class _MockedAFE(AdaptiveSkribeEngineer):
     """Subclass that replaces _probe_fe_delta with a controllable fake."""
 
     def __init__(self, probe_base, probe_fe, **kw):
@@ -181,7 +181,7 @@ class _MockedAFE(AdaptiveFeatureEngineer):
         import math
 
         if not isinstance(X, pd.DataFrame):
-            raise ValueError("AdaptiveFeatureEngineer requires a pandas DataFrame.")
+            raise ValueError("AdaptiveSkribeEngineer requires a pandas DataFrame.")
 
         self.skip_reason_ = None
         self.probe_score_base_ = float("nan")
@@ -279,22 +279,22 @@ def test_adaptive_passthrough_preserves_dataframe(Xy):
 
 def test_adaptive_transform_before_fit_raises(Xy):
     X, _ = Xy
-    afe = AdaptiveFeatureEngineer(verbose=False)
+    afe = AdaptiveSkribeEngineer(verbose=False)
     with pytest.raises(RuntimeError, match="fit"):
         afe.transform(X)
 
 
 def test_adaptive_requires_dataframe():
-    afe = AdaptiveFeatureEngineer(verbose=False)
+    afe = AdaptiveSkribeEngineer(verbose=False)
     with pytest.raises(ValueError, match="DataFrame"):
         afe.fit(np.array([[1, 2], [3, 4]]), np.array([0, 1]))
 
 
 def test_prompt_fe_empty_dict_passthrough(Xy):
-    """PromptFeatureEngineer with LLM returning empty dict → transform returns original cols."""
+    """SkribeFeatureEngineer with LLM returning empty dict → transform returns original cols."""
     X, y = Xy
     empty_code = "def transform(**features):\n    return {}\n"
-    fe = _mock(PromptFeatureEngineer(verbose=False), code=empty_code)
+    fe = _mock(SkribeFeatureEngineer(verbose=False), code=empty_code)
     fe.fit(X, y)
     assert fe.new_feature_names_ == []
     out = fe.transform(X)
@@ -306,7 +306,7 @@ def test_prompt_fe_dataset_stats_injected(Xy):
     X, y = Xy
     captured = []
 
-    fe = PromptFeatureEngineer(verbose=False)
+    fe = SkribeFeatureEngineer(verbose=False)
     fe._call_llm = lambda prompt, web_search=False: (
         captured.append(prompt),
         GOOD_CODE,

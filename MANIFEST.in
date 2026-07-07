@@ -1,5 +1,5 @@
 # Keep local-only and secret-bearing files out of the source distribution.
-# (The wheel only ships the promptlearn package, but be explicit for the sdist.)
+# (The wheel only ships the skribe package, but be explicit for the sdist.)
 exclude .env .envrc .cursorrules
 global-exclude .env .envrc
 recursive-exclude .claude *

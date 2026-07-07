@@ -11,7 +11,7 @@ from skribe.compare import compare_models, explain_comparison, _infer_task
 from skribe.explain import Explanation
 
 
-class _DummyPrompt(BaseSkribeEstimator):
+class _DummySkribe(BaseSkribeEstimator):
     """A skribe estimator that records the columns it was fitted on, so we
     can verify it receives the RAW frame (no one-hot wrapping)."""
 
@@ -82,7 +82,7 @@ def test_skribe_estimator_gets_raw_columns():
     Xte = pd.DataFrame({"color": ["blue"], "n": [5]})
     yte = pd.Series([1])
 
-    dummy = _DummyPrompt()
+    dummy = _DummySkribe()
     metrics, preds = compare_models({"prompt": dummy}, Xtr, ytr, Xte, yte)
 
     assert dummy.seen_columns_ == ["color", "n"]  # raw columns, no expansion
@@ -108,7 +108,7 @@ def test_failing_model_yields_nan_not_crash():
 # explain_comparison tests
 # ---------------------------------------------------------------------------
 
-class _FittedPrompt(BaseSkribeEstimator):
+class _FittedSkribe(BaseSkribeEstimator):
     """Pre-fitted skribe stub: always predicts label based on x1 threshold."""
 
     def __init__(self):
@@ -135,7 +135,7 @@ def _explain_data():
 def test_explain_comparison_returns_explanation(monkeypatch):
     """explain_comparison returns an Explanation with the expected keys."""
     X, y = _explain_data()
-    prompt_model = _FittedPrompt()
+    prompt_model = _FittedSkribe()
     logreg = LogisticRegression(max_iter=1000).fit(X, y)
 
     monkeypatch.setattr(prompt_model, "_call_llm", lambda p, **kw: "Model A uses an explicit threshold; Model B uses a linear boundary.")
@@ -156,7 +156,7 @@ def test_explain_comparison_returns_explanation(monkeypatch):
 def test_explain_comparison_includes_generated_code_in_prompt(monkeypatch):
     """The generated code from skribe estimators must appear in the LLM prompt."""
     X, y = _explain_data()
-    prompt_model = _FittedPrompt()
+    prompt_model = _FittedSkribe()
     dummy = DummyClassifier(strategy="most_frequent").fit(X, y)
 
     captured = {}
@@ -185,11 +185,11 @@ def test_explain_comparison_disagreement_rate(monkeypatch):
     m2 = DummyClassifier(strategy="most_frequent").fit(X, y)
 
     # Use a skribe stub so we can monkeypatch _call_llm
-    stub = _FittedPrompt()
+    stub = _FittedSkribe()
     monkeypatch.setattr(stub, "_call_llm", lambda p, **kw: "same")
 
     # Use a skribe stub that also always predicts 0 (same as DummyClassifier most_frequent)
-    always_zero = _FittedPrompt()
+    always_zero = _FittedSkribe()
     always_zero.python_code_ = "def predict(**f): return 0"
     always_zero.predict = lambda X: np.zeros(len(pd.DataFrame(X)), dtype=int)
     monkeypatch.setattr(always_zero, "_call_llm", lambda p, **kw: "same")
@@ -198,7 +198,7 @@ def test_explain_comparison_disagreement_rate(monkeypatch):
     assert result.data["disagreement_rate"] == 0.0
 
     # Prompt model disagrees with dummy on some rows
-    prompt_model = _FittedPrompt()
+    prompt_model = _FittedSkribe()
     monkeypatch.setattr(prompt_model, "_call_llm", lambda p, **kw: "diff")
     result2 = explain_comparison({"prompt": prompt_model, "dummy": m1}, X, y,
                                   task="classification", shap_sample=6)
@@ -212,7 +212,7 @@ def test_explain_comparison_feature_importance_keys(monkeypatch):
     m2 = DummyClassifier(strategy="most_frequent").fit(X, y)
 
     # Patch the BaseSkribeEstimator constructor used internally for the LLM call
-    stub = _FittedPrompt()
+    stub = _FittedSkribe()
     monkeypatch.setattr(stub, "_call_llm", lambda p, **kw: "ok")
     # Pass stub as one of the models so its _call_llm gets picked up
     result = explain_comparison({"logreg": m1, "dummy": m2, "stub": stub}, X, y,
@@ -235,7 +235,7 @@ def test_explain_comparison_no_shap_fallback(monkeypatch):
 
     X, y = _explain_data()
     m1 = LogisticRegression(max_iter=1000).fit(X, y)
-    stub = _FittedPrompt()
+    stub = _FittedSkribe()
     monkeypatch.setattr(stub, "_call_llm", lambda p, **kw: "fallback")
 
     monkeypatch.setattr(builtins, "__import__", mock_import)

@@ -5,6 +5,34 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.1.0] — 2026-07-06 — rename to skribe (PyPI v0.1.0)
+### Changed
+- Package renamed from `promptlearn` to `skribe`. All public classes renamed:
+  `SkribeClassifier`, `SkribeRegressor`, `SkribeFeatureEngineer`,
+  `AdaptiveSkribeEngineer`, `BaseSkribeEstimator`
+- Environment variable renamed: `SKRIBE_MODEL` (was `PROMPTLEARN_MODEL`)
+- CLI entry point renamed: `skribe` (was `promptlearn`)
+- Package metadata migrated from `setup.py` to `pyproject.toml` (PEP 621)
+- Version reset to `0.1.0` for fresh PyPI project at pypi.org/project/skribe/
+- A final `promptlearn` 0.6.0 shim published on PyPI that depends on `skribe`
+  and redirects existing users
+
+### Added
+- `explain_comparison()`: contrastive SHAP-based feature importance across
+  multiple fitted models (including non-skribe baselines) with LLM-generated
+  plain-English narrative of why the models differ
+- Web search at fit time: pass `web_search=True` to `fit()` to let the LLM
+  query the web for domain schemas (ICD codes, airport codes, NAICS codes, etc.)
+  when building lookup tables. Supported on GPT-5+ and Gemini Vertex AI models
+- `AdaptiveSkribeEngineer`: two-stage guard before any LLM call — size check
+  then probe CV — skips feature engineering if it doesn't improve accuracy
+- Benchmark suite expanded to 16 datasets (13 OpenML + spotify-genre,
+  heart-statlog, zoo); results cached per model/dataset with progression tracking
+- `docs/related_work.md`: prior art survey covering FeatLLM, CAAFE, OCTree,
+  Talking Trees, Scikit-LLM, TabPFN, PySR and seven novelty claims for skribe
+
+---
+
 ## [0.5.0] — 2026-06-23 — feature engineering & benchmarks
 ### Added
 - `SkribeFeatureEngineer`: a scikit-learn `TransformerMixin` that uses the LLM

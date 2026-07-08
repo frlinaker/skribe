@@ -228,6 +228,96 @@ def test_context_prepass_web_search_forwarded(monkeypatch):
     assert prepass_web_search == [True]
 
 
+def test_context_prepass_states_true_label_mapping(monkeypatch):
+    """fit() must accept raw string class labels directly and have the
+    pre-pass prompt state the REAL label for each class — not a bare
+    integer code the LLM has to guess the meaning of.
+
+    Before this fix, skribe's public contract required y to already be
+    int-coded by the caller (predict() must return an int; see
+    DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE and _validate_predict_fn), so any
+    caller with string labels — e.g. benchmarks/benchmark_utils.py's
+    ``classes = {c: i for i, c in enumerate(sorted(y.unique()))}`` — had to
+    encode away the original names before fit() ever saw them. By the time
+    _build_dataset_context() ran, the target column held nothing but bare
+    ints (0, 1, 2), so the pre-pass LLM had to guess what each meant and
+    models converged on "intuitive" but wrong guesses (e.g. common-sense
+    ordering instead of the true sorted-alphabetical one).
+    skribe should do this encoding itself, internally, so it always knows
+    (and can state) the true label for every class code — callers should be
+    able to just pass their original labels straight to fit().
+    """
+    clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
+    calls = []
+
+    def fake_call_llm(prompt, web_search=False):
+        calls.append(prompt)
+        if len(calls) == 1:
+            return "This is a clean summary."  # pre-pass response
+        return SIMPLE_CODE  # fit + extend responses
+
+    monkeypatch.setattr(clf, "_call_llm", fake_call_llm)
+
+    X = pd.DataFrame({"legs": [4, 2, 0], "feathers": [False, True, False]})
+    # Raw string labels, passed straight in — no pre-encoding by the caller.
+    y = pd.Series(["mammal", "bird", "fish"])
+
+    clf.fit(X, y, dataset_description="Zoo animal classification.")
+
+    prepass_prompt = calls[0]
+    for label in ("mammal", "bird", "fish"):
+        assert label in prepass_prompt, (
+            f"Pre-pass prompt never mentions the true class label {label!r} — "
+            "fit() must thread the true label mapping into the context "
+            "pre-pass instead of leaving only bare integer codes to guess from."
+        )
+
+    # predict() must still return integers (unchanged public contract), and
+    # classes_ must expose the true sorted label-to-code mapping so callers
+    # can recover the original label from a prediction.
+    assert list(clf.classes_) == ["bird", "fish", "mammal"]
+
+
+def test_fit_prompt_states_label_mapping_even_if_prepass_omits_it(monkeypatch):
+    """The code-generation prompt (fit_prompt_) must state the literal
+    code->label mapping for the target column, unconditionally — not just
+    rely on the context pre-pass to have mentioned it.
+
+    In a real run (gpt-4.1-web on the zoo dataset), the pre-pass summary
+    correctly listed the 7 true label names but never restated which
+    integer code corresponds to which label — it's a second LLM call
+    producing free text, and it's not guaranteed to preserve that explicit
+    correspondence even when the labels are right. The training data CSV
+    itself only ever contains bare ints, so without an explicit, deterministic
+    "code=label" line in the main prompt, the code-generation LLM still has
+    to guess the mapping — reproducing the exact bug this fix targets.
+    """
+    clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
+    calls = []
+
+    def fake_call_llm(prompt, web_search=False):
+        calls.append(prompt)
+        if len(calls) == 1:
+            # Pre-pass summary lists the labels but NOT the code mapping —
+            # exactly what happened in the real gpt-4.1-web zoo run.
+            return "This dataset predicts the animal class: amphibian, bird, fish, mammal."
+        return SIMPLE_CODE
+
+    monkeypatch.setattr(clf, "_call_llm", fake_call_llm)
+
+    X = pd.DataFrame({"legs": [4, 2, 0, 8]})
+    y = pd.Series(["mammal", "bird", "fish", "amphibian"])
+    clf.fit(X, y, dataset_description="Zoo animal classification.")
+
+    fit_prompt = clf.fit_prompt_
+    for code, label in enumerate(["amphibian", "bird", "fish", "mammal"]):
+        assert f"{code}={label}" in fit_prompt, (
+            f"fit_prompt_ never states the explicit mapping {code}={label!r} — "
+            "the code-generation LLM only sees bare integers in the training "
+            "data and has nothing authoritative to tie them back to real labels."
+        )
+
+
 def test_context_prepass_fallback_on_llm_failure(monkeypatch):
     """If the pre-pass LLM call fails, fit() continues with the sanitized raw description."""
     clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)

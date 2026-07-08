@@ -151,7 +151,7 @@ def main():
     description = spec[4] if len(spec) > 4 else None
 
     print(f"Loading dataset: {args.dataset} ...")
-    X, y, class_map, _ = load_dataset(
+    X, y, class_map, _, _ = load_dataset(
         openml_name, version, max_rows=None,
         csv_path=csv_path, target_col=target_col,
         description=description, require_description=False,

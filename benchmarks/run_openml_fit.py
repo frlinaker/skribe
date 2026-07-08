@@ -129,7 +129,7 @@ def run_one_baseline(
     target_col = spec[3] if len(spec) > 3 else None
     description = spec[4] if len(spec) > 4 else None
 
-    X, y, class_map, _ = load_dataset(
+    X, y, class_map, _, _ = load_dataset(
         openml_name, version, max_rows,
         csv_path=csv_path, target_col=target_col, description=description,
         require_description=False,
@@ -225,14 +225,14 @@ def run_one_skribe(
     spec_description = spec[4] if len(spec) > 4 else None
 
     print(f"{tag} loading dataset…", flush=True)
-    X, y, class_map, description = load_dataset(
+    X, y, class_map, description, y_str = load_dataset(
         openml_name, version, max_rows,
         csv_path=csv_path, target_col=target_col, description=spec_description,
         require_description=not skip_context,
     )
     n_classes = len(class_map)
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.25, random_state=42, stratify=y
+    X_train, X_test, y_train, y_test, y_str_train, _ = train_test_split(
+        X, y, y_str, test_size=0.25, random_state=42, stratify=y
     )
     print(f"{tag} {len(X)} rows  {X.shape[1]} cols  {n_classes} classes", flush=True)
 
@@ -299,7 +299,14 @@ def run_one_skribe(
 
         print(f"{tag} fitting…", flush=True)
         t_fit = time.time()
-        clf.fit(X_train, y_train, dataset_description=description or None)
+        # Pass the original string labels (not the pre-encoded y_train) so
+        # SkribeClassifier's own internal encoding knows the true class names
+        # and can state them in the context pre-pass, instead of the pre-pass
+        # LLM having to guess what a bare integer code means. Its classes_
+        # mapping is guaranteed to match class_map (both are
+        # sorted(unique-labels)), so clf.predict()'s integer output stays
+        # directly comparable to y_test below.
+        clf.fit(X_train, y_str_train, dataset_description=description or None)
         fit_elapsed = time.time() - t_fit
         print(f"{tag} fit done  ({fit_elapsed:.1f}s)  code={len(clf.raw_python_code_ or ''):,} chars", flush=True)
 

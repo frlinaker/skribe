@@ -63,12 +63,25 @@ class SkribeClassifier(ClassifierMixin, BaseSkribeEstimator):
     def fit(
         self, X, y, synthetic_features=None, dataset_description=None
     ) -> "SkribeClassifier":
+        y = pd.Series(y).reset_index(drop=True)
+        # classes_ in sorted order, sklearn-LabelEncoder style. Encoding here
+        # (rather than requiring the caller to pre-encode) means skribe always
+        # knows the true label for every class code, so the context pre-pass
+        # can state it instead of the LLM having to guess what an integer
+        # code "should" mean (see test_context_prepass_states_true_label_mapping).
+        self.classes_ = np.array(sorted(y.unique(), key=lambda v: (str(type(v)), v)))
+        label_names = {i: label for i, label in enumerate(self.classes_)}
+        self._code_of_ = {label: i for i, label in label_names.items()}
+        y_encoded = y.map(self._code_of_).astype(int)
+        y_encoded.name = y.name
+
         return super()._fit(
             X,
-            y,
+            y_encoded,
             DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE,
             synthetic_features=synthetic_features,
             dataset_description=dataset_description,
+            label_names=label_names,
         )
 
     def predict(self, X) -> np.ndarray:
@@ -97,7 +110,12 @@ class SkribeClassifier(ClassifierMixin, BaseSkribeEstimator):
 
     def score(self, X, y):
         y_pred = self.predict(X)
-        y_true = np.array(y)
         # Remove None or unknowns from y_pred for scoring (force 0)
         y_pred = np.array([int(v) if v is not None else 0 for v in y_pred])
+        # y may be in original label space (strings, bools, ...) or already
+        # the integer codes fit() produced — map through _code_of_ when
+        # possible so both are compared in the same (integer) space, falling
+        # back to raw values unchanged for any label unseen during fit().
+        code_of = getattr(self, "_code_of_", {})
+        y_true = np.array([code_of.get(v, v) for v in y])
         return (y_true == y_pred).mean()

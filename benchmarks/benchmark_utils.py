@@ -127,7 +127,7 @@ DEFAULT_DATASETS = _build_default_datasets(_CONFIG)
 def load_dataset(openml_name, version, max_rows: int | None, csv_path=None, target_col=None, description=None, require_description=True):
     if csv_path is not None:
         df = pd.read_csv(csv_path)
-        y = df[target_col].astype(str)
+        y_str = df[target_col].astype(str)
         X = df.drop(columns=[target_col])
         resolved_description = description or ""
     else:
@@ -135,7 +135,7 @@ def load_dataset(openml_name, version, max_rows: int | None, csv_path=None, targ
             name=openml_name, version=version, as_frame=True, parser="auto"
         )
         X = bunch.data.copy()
-        y = pd.Series(np.asarray(bunch.target)).astype(str)
+        y_str = pd.Series(np.asarray(bunch.target)).astype(str)
         resolved_description = description or getattr(bunch, "DESCR", None) or ""
     if require_description and not resolved_description:
         raise ValueError(
@@ -143,12 +143,26 @@ def load_dataset(openml_name, version, max_rows: int | None, csv_path=None, targ
             f"Add a description string to the DEFAULT_DATASETS entry, "
             f"or pass --skip-context to explicitly disable the pre-pass."
         )
-    classes = {c: i for i, c in enumerate(sorted(y.unique()))}
-    y = y.map(classes).astype(int)
+    classes = {c: i for i, c in enumerate(sorted(y_str.unique()))}
+    y = y_str.map(classes).astype(int)
     if max_rows and len(X) > max_rows:
         X = X.sample(max_rows, random_state=42)
         y = y.loc[X.index]
-    return X.reset_index(drop=True), y.reset_index(drop=True), classes, resolved_description
+        y_str = y_str.loc[X.index]
+    # y: int-coded (sorted(classes) order) for baselines/metrics, which need
+    # numeric targets and must stay directly comparable across skribe and
+    # baseline runs. y_str: the original string labels, in the same row
+    # order/index — SkribeClassifier.fit() now does its own internal integer
+    # encoding, so passing y_str (rather than the pre-encoded y) lets its
+    # context pre-pass state the true class labels instead of having to
+    # guess what an already-bare integer means.
+    return (
+        X.reset_index(drop=True),
+        y.reset_index(drop=True),
+        classes,
+        resolved_description,
+        y_str.reset_index(drop=True),
+    )
 
 
 def _rich_metrics(

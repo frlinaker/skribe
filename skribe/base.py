@@ -253,6 +253,7 @@ class BaseSkribeEstimator(BaseEstimator):
         feature_names: list,
         sample_df,
         target_name: str,
+        label_names: Optional[dict] = None,
     ) -> str:
         """Run a pre-pass LLM call to produce a clean, structured dataset context block.
 
@@ -266,6 +267,14 @@ class BaseSkribeEstimator(BaseEstimator):
 
         If web_search is True the same flag is forwarded so the model can look up
         domain schemas (e.g. UCI attribute glossaries).
+
+        ``label_names`` maps each integer class code actually present in
+        ``sample_df[target_name]`` to its true original label (e.g.
+        ``{0: "bird", 1: "fish", 2: "mammal"}``). When given, the target-value
+        line states the real labels instead of the bare training codes — the
+        target column itself has already been integer-encoded for training by
+        the time this runs, so without ``label_names`` there would be nothing
+        but bare ints to go on and the LLM would have to guess what they mean.
         """
         import pandas as pd
 
@@ -277,7 +286,13 @@ class BaseSkribeEstimator(BaseEstimator):
             value_lines.append(f"  {col}: {', '.join(preview)}")
         value_summary = "\n".join(value_lines)
 
-        target_uniq = sorted(str(v) for v in sample_df[target_name].dropna().unique())
+        target_codes = sample_df[target_name].dropna().unique()
+        if label_names:
+            target_uniq = sorted(
+                str(label_names.get(code, code)) for code in target_codes
+            )
+        else:
+            target_uniq = sorted(str(v) for v in target_codes)
 
         prompt = (
             "You are preparing a structured dataset summary that will be embedded in a "
@@ -322,11 +337,22 @@ class BaseSkribeEstimator(BaseEstimator):
         prompt: str,
         synthetic_features: Optional[list],
         context_block: Optional[str],
+        label_names: Optional[dict] = None,
+        target_name: Optional[str] = None,
     ) -> str:
         """Build the prompt with {data} still present as a placeholder.
 
         ``context_block`` is the already-processed dataset context string (either
         the output of ``_build_dataset_context`` or a sanitized raw description).
+
+        ``label_names`` (target column code -> true label) is stated here
+        verbatim and unconditionally — not just fed into the context pre-pass
+        — because the pre-pass is a second LLM call summarizing in free text;
+        it may drop or reorder the explicit code->label correspondence even
+        when it correctly lists the label names. The training data CSV itself
+        only ever contains the bare integer codes, so without this line the
+        code-generation LLM has nothing authoritative to tie e.g. `1` back to
+        `bird` and has to guess (see test_fit_prompt_states_label_mapping).
         """
         if synthetic_features:
             synthetic_note = (
@@ -336,6 +362,22 @@ class BaseSkribeEstimator(BaseEstimator):
                 "Base your prediction mainly on the original (non-synthetic) columns.\n"
             )
             prompt = synthetic_note + prompt
+
+        # Only worth stating when a code actually differs from its own label
+        # (e.g. string labels encoded to ints) — skip the no-op case where y
+        # was already plain ints 0..n-1, to avoid adding a noisy, redundant
+        # section to every fit() call regardless of dataset_description.
+        needs_mapping_line = label_names and any(
+            str(code) != str(label) for code, label in label_names.items()
+        )
+        if needs_mapping_line:
+            mapping_str = ", ".join(f"{code}={label}" for code, label in sorted(label_names.items()))
+            mapping_line = (
+                f"The {target_name or 'target'} column in the training data below is integer-coded. "
+                f"The TRUE meaning of each code is: {mapping_str}. "
+                "Use exactly this mapping — do not infer or guess a different one."
+            )
+            context_block = f"{mapping_line}\n\n{context_block}" if context_block else mapping_line
 
         if context_block:
             context_section = f"{CONTEXT_START}\n{context_block}\n{CONTEXT_END}\n\n"
@@ -476,6 +518,7 @@ class BaseSkribeEstimator(BaseEstimator):
         prompt: str,
         synthetic_features: Optional[list] = None,
         dataset_description: Optional[str] = None,
+        label_names: Optional[dict] = None,
     ):
         data, self.feature_names_, self.target_name_ = prepare_training_data(X, y)
         self.explanation_ = None  # invalidate any cached explanation from a prior fit
@@ -501,6 +544,7 @@ class BaseSkribeEstimator(BaseEstimator):
                 self.feature_names_,
                 data,
                 self.target_name_,
+                label_names=label_names,
             )
             context_block = self.context_summary_
         elif dataset_description:
@@ -509,7 +553,8 @@ class BaseSkribeEstimator(BaseEstimator):
             context_block = None
 
         prompt_template = self._build_prompt_without_data(
-            prompt, synthetic_features, context_block
+            prompt, synthetic_features, context_block,
+            label_names=label_names, target_name=self.target_name_,
         )
 
         headroom = _CONTEXT_HEADROOM

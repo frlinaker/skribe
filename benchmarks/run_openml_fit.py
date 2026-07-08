@@ -205,7 +205,7 @@ def run_one_skribe(
     skip_context: bool = False,
 ) -> dict:
     actual_model_id = base_model_id or (
-        model_id.removesuffix("+web") if web_search else model_id
+        model_id.removesuffix("-web") if web_search else model_id
     )
     tag = f"[{dataset} × {model_id}]"
     safe_model_id = model_id.replace("/", "-")
@@ -395,8 +395,7 @@ def main(argv=None):
     if args.list_models:
         print("Valid --llm values:")
         for m in MODEL_PROGRESSION:
-            ws = " [+web]" if m.get("web_search") else ""
-            print(f"  {m['model_id']:<45}  {m['label']}{ws}")
+            print(f"  {m['model_id']:<45}  {m['label']}")
         return 0
 
     if args.model == "skribe":

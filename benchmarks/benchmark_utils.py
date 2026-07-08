@@ -51,7 +51,7 @@ def _load_config() -> dict:
 
 def _build_model_progression(config: dict) -> list[dict]:
     """Expand config["models"] (base models only) into the flat, ordered
-    list every script expects: each base model followed by its "+web"
+    list every script expects: each base model followed by its "-web"
     sibling (auto-derived) when supports_web is true.
     """
     progression = []
@@ -74,7 +74,7 @@ def _build_model_progression(config: dict) -> list[dict]:
 
         if entry.get("supports_web"):
             web = dict(base)
-            web["model_id"] = f"{entry['model_id']}+web"
+            web["model_id"] = f"{entry['model_id']}-web"
             web["base_model_id"] = entry["model_id"]
             web["label"] = f"{entry['label']} +web"
             web["web_search"] = True

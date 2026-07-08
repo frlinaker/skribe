@@ -6,9 +6,10 @@
 # small inline-Python bridge since they're shell scripts.
 
 # Ordered oldest -> newest. release_date is approximate; used as the x-axis
-# value in progression charts. Only base (non-"+web") models are listed here
-# — a "+web" sibling is auto-derived for every model with supports_web: true
-# (label + " +web", web_search: true, base_model_id set, color lightened).
+# value in progression charts. Only base (non-web) models are listed here
+# — a "-web" sibling is auto-derived for every model with supports_web: true
+# (model_id + "-web", label + " +web", web_search: true, base_model_id set,
+# color lightened).
 models:
   # OpenAI
   - model_id: gpt-4o

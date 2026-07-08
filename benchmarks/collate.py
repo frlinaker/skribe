@@ -21,7 +21,7 @@ Examples
     python benchmarks/collate.py
 
     # filter to a subset of datasets and/or LLM model IDs
-    python benchmarks/collate.py --datasets adult credit-g --llms gpt-5.5 gpt-5.5+web
+    python benchmarks/collate.py --datasets adult credit-g --llms gpt-5.5 gpt-5.5-web
 
     # write charts to a different directory
     python benchmarks/collate.py --output-dir /tmp/bench_out

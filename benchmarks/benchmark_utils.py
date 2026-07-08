@@ -435,7 +435,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                 linewidth=2.5,
                 linestyle="-",
                 drawstyle="steps-post",
-                label=f"{style['label']} ({final_acc:.3f})",
+                label=f"{style['label']}, best ({final_acc:.3f})",
                 zorder=3,
             )
 
@@ -494,7 +494,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                 linewidth=2.0,
                 linestyle=":",
                 drawstyle="steps-post",
-                label=f"{web_label} ({final_acc_web:.3f})",
+                label=f"{web_label}, best ({final_acc_web:.3f})",
                 zorder=3,
                 alpha=0.85,
             )
@@ -598,7 +598,19 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
         m = _re.search(r"\((\d+\.\d+)\)", hl[1])
         return -float(m.group(1)) if m else 0.0
     handles, labels = zip(*sorted(zip(handles, labels), key=_legend_sort_key)) if handles else (handles, labels)
-    ax.legend(handles, labels, fontsize=8, loc="upper left")
+    if not lr_data.empty:
+        # Anchor the legend's top edge just below the Logistic Regression
+        # line instead of the axes' top-left corner — x stays at the left
+        # edge (axes fraction 0), only y moves, via a transform that mixes
+        # axes-fraction x with data-coordinate y.
+        ax.legend(
+            handles, labels, fontsize=10,
+            loc="upper left",
+            bbox_to_anchor=(0, lr_mean - 0.01),
+            bbox_transform=ax.get_yaxis_transform(),
+        )
+    else:
+        ax.legend(handles, labels, fontsize=10, loc="upper left")
     fig.tight_layout()
     out = output_dir / "model_progression.png"
     fig.savefig(out, dpi=150)

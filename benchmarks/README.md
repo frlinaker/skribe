@@ -114,14 +114,26 @@ Datasets, LLM models, and baseline learners are all defined once in
   `color`. Also requires a corresponding classifier factory in
   `benchmark_utils.py` and a case in `run_openml_fit.py`'s baseline dispatch.
 
+## AdaptiveSkribeEngineer (feature engineering) benchmark
+
+```bash
+benchmarks/run_afe_benchmark.sh
+```
+
+For every dataset, fits `logreg` and `xgboost` both with and without
+`AdaptiveSkribeEngineer` applied first (via `run_openml_fit.py --fe-model`),
+then runs `plot_afe_lift.py` to print a per-dataset delta table and save a
+lift chart. Same cache as everything else, so it's safe to re-run or resume.
+Defaults to the latest base OpenAI model in `config.yaml`; override with
+`--fe-model=gpt-5.5`.
+
 ## Other scripts
 
 - `benchmark_utils.py` — shared dataset loaders, `DEFAULT_DATASETS`,
   `MODEL_PROGRESSION`, plotting utilities. Not run directly.
 - `build_skribe_inspector.py` — generates a self-contained HTML page for
   browsing generated prompts/code per `(dataset, model)` from cache files.
-- `run_adaptive_fe_benchmark.py` — separate benchmark for
-  `AdaptiveSkribeEngineer` (feature engineering), independent of the
-  classifier benchmark above.
+- `plot_afe_lift.py` — reporting step for the AFE benchmark above; reads
+  cache files, doesn't fit anything itself.
 - `test_large_prompt.py` — stress test for very large fit prompts against
   OpenAI/Gemini.

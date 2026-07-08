@@ -192,8 +192,12 @@ def _cache_key(
     return hashlib.sha1(raw.encode()).hexdigest()[:16]
 
 
-def _baseline_cache_key(dataset: str, max_rows: int | None) -> str:
+def _baseline_cache_key(dataset: str, max_rows: int | None, fe_model: str | None = None) -> str:
+    # No fe_model: keep the exact pre-existing formula so already-cached
+    # baseline runs (hashed without any "|fe=" component) stay valid.
     raw = f"{CACHE_SCHEMA}|baselines|{dataset}|{max_rows}"
+    if fe_model:
+        raw += f"|fe={fe_model}"
     return hashlib.sha1(raw.encode()).hexdigest()[:16]
 
 

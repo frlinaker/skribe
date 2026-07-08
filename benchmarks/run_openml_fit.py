@@ -110,10 +110,11 @@ def run_one_baseline(
     model: str,
     max_rows: int | None,
     cache_dir: Path | None,
+    fe_model: str | None = None,
     skip_cache_read: bool = False,
 ) -> dict:
     cache_file = (
-        cache_dir / f"{dataset}-{model}-{_baseline_cache_key(dataset, max_rows)}.json"
+        cache_dir / f"{dataset}-{model}-{_baseline_cache_key(dataset, max_rows, fe_model=fe_model)}.json"
         if cache_dir
         else None
     )
@@ -145,6 +146,28 @@ def run_one_baseline(
         "n_cols": X.shape[1],
         "n_classes": n_classes,
     }
+
+    tag = f"[{dataset} × {model}]"
+    if fe_model:
+        from skribe import AdaptiveSkribeEngineer
+
+        print(f"{tag} running AdaptiveSkribeEngineer ({fe_model})…", flush=True)
+        try:
+            fe_step = AdaptiveSkribeEngineer(model=fe_model, verbose=False)
+            X_train = fe_step.fit_transform(X_train, y_train)
+            X_test = fe_step.transform(X_test)
+            skip = getattr(fe_step, "skip_reason_", None)
+            result["fe_model"] = fe_model
+            result["fe_skip_reason"] = skip
+            result["fe_probe_delta"] = getattr(fe_step, "probe_delta_", None)
+            if skip:
+                print(f"{tag} AdaptiveFE skipped: {skip}", flush=True)
+            else:
+                print(f"{tag} AdaptiveFE done — {X_train.shape[1]} cols", flush=True)
+        except Exception as e:
+            print(f"{tag} AdaptiveFE FAILED: {e}  (using original features)", flush=True)
+            result["fe_model"] = fe_model
+            result["fe_error"] = str(e)
 
     t0 = time.time()
     try:
@@ -365,7 +388,7 @@ def main(argv=None):
         "--fe-model",
         default=None,
         metavar="MODEL_ID",
-        help="LLM for AdaptiveSkribeEngineer before SkribeClassifier (skribe only).",
+        help="LLM for AdaptiveSkribeEngineer applied before fitting --model (logreg/xgboost/skribe).",
     )
     args = parser.parse_args(argv)
 
@@ -407,6 +430,7 @@ def main(argv=None):
                 args.model,
                 args.max_rows,
                 cache_dir,
+                fe_model=args.fe_model,
                 skip_cache_read=args.no_cache,
             )
         except Exception as e:

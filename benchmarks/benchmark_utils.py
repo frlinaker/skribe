@@ -406,6 +406,10 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
             color = style["color"]
 
             # Cumulative-max envelope line (the "best so far" trajectory).
+            # steps-post: flat at the previous best until the next model's exact
+            # release date, then a vertical jump — a straight ax.plot() would
+            # instead draw a diagonal ramp between release dates, which looks
+            # like a real upward trend even when no better model existed yet.
             grp["best_so_far"] = grp["accuracy"].cummax()
             final_acc = grp["best_so_far"].iloc[-1]
             ax.plot(
@@ -414,6 +418,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                 color=color,
                 linewidth=2.5,
                 linestyle="-",
+                drawstyle="steps-post",
                 label=f"{style['label']} ({final_acc:.3f})",
                 zorder=3,
             )
@@ -465,6 +470,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                 color=color,
                 linewidth=2.0,
                 linestyle=":",
+                drawstyle="steps-post",
                 label=f"{web_label} ({final_acc_web:.3f})",
                 zorder=3,
                 alpha=0.85,
@@ -528,7 +534,6 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
             x=_pt_x,
             y=_pt_y,
             ax=ax,
-            arrowprops=dict(arrowstyle="-", color="#888", lw=0.7),
             expand=(2.0, 2.0),
             force_text=(1.5, 1.5),
             force_points=(2.0, 2.0),
@@ -844,6 +849,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                     color=pstyle["color"],
                     linewidth=2.2,
                     linestyle="-",
+                    drawstyle="steps-post",
                     label=f"skribe/{pstyle['label']} ({final_acc:.3f})",
                     zorder=3,
                 )
@@ -871,6 +877,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                     color=color,
                     linewidth=1.8,
                     linestyle=":",
+                    drawstyle="steps-post",
                     label=f"skribe/{pstyle['label']} +web ({final_acc:.3f})",
                     zorder=3,
                     alpha=0.85,

@@ -537,6 +537,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
             expand=(2.0, 2.0),
             force_text=(1.5, 1.5),
             force_points=(2.0, 2.0),
+            force_pull=(0.5, 0.5),
             avoid_self=True,
             only_move={"text": "xy", "points": "xy"},
         )

@@ -18,24 +18,16 @@ EXTRA_ARGS="${@}"
 OPENAI_MODELS=(
     "gpt-4o"
     "gpt-4o-mini"
-    "gpt-4o-mini+web"
     "gpt-4.1"
-    "gpt-4.1+web"
     "gpt-5.4-mini"
-    "gpt-5.4-mini+web"
     "gpt-5.5"
-    "gpt-5.5+web"
 )
 
 GEMINI_MODELS=(
     "vertex_ai/gemini-2.5-flash-lite"
-    "vertex_ai/gemini-2.5-flash-lite+web"
     "vertex_ai/gemini-2.5-flash"
-    "vertex_ai/gemini-2.5-flash+web"
     "vertex_ai/gemini-3.5-flash"
-    "vertex_ai/gemini-3.5-flash+web"
     "vertex_ai/gemini-2.5-pro"
-    "vertex_ai/gemini-2.5-pro+web"
 )
 
 run_group() {

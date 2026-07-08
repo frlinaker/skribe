@@ -379,11 +379,11 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
     # per provider (+web models).  Cumulative-max envelope so weaker models
     # don't cause visual dips.
     provider_styles = {
-        "openai": {"color": "#D65F5F", "marker": "o", "label": "skribe / OpenAI GPT"},
+        "openai": {"color": "#D65F5F", "marker": "o", "label": "skribe OpenAI"},
         "google": {
             "color": "#4285F4",
             "marker": "s",
-            "label": "skribe / Google Gemini",
+            "label": "skribe Google",
         },
     }
     if "web_search" not in pl_data.columns:
@@ -435,7 +435,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                 linewidth=2.5,
                 linestyle="-",
                 drawstyle="steps-post",
-                label=f"{style['label']}, best ({final_acc:.3f})",
+                label=f"{style['label']} best ({final_acc:.3f})",
                 zorder=3,
             )
 
@@ -483,7 +483,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                 {"color": "#999", "marker": "o", "label": f"skribe / {provider}"},
             )
             color = style["color"]
-            web_label = f"skribe / {'OpenAI GPT' if provider == 'openai' else 'Google Gemini'} +web"
+            web_label = f"skribe {'OpenAI' if provider == 'openai' else 'Google'} +web"
 
             grp["best_so_far"] = grp["accuracy"].cummax()
             final_acc_web = grp["best_so_far"].iloc[-1]
@@ -494,7 +494,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                 linewidth=2.0,
                 linestyle=":",
                 drawstyle="steps-post",
-                label=f"{web_label}, best ({final_acc_web:.3f})",
+                label=f"{web_label} best ({final_acc_web:.3f})",
                 zorder=3,
                 alpha=0.85,
             )

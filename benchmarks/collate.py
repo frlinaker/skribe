@@ -44,6 +44,7 @@ load_dotenv()
 sys.path.insert(0, os.path.dirname(__file__))
 
 from benchmark_utils import (
+    BASELINE_MODELS,
     DEFAULT_DATASETS,
     MODEL_PROGRESSION,
     build_summary_df,
@@ -52,8 +53,6 @@ from benchmark_utils import (
 )
 
 logger = logging.getLogger("skribe.progression")
-
-BASELINE_MODELS = {"logreg", "xgboost", "tabpfn"}
 
 
 def load_cache_results(

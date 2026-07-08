@@ -31,6 +31,12 @@ logger = logging.getLogger("skribe.progression")
 
 CACHE_SCHEMA = "progression-v1"
 
+# Baseline learner names. Cache files for these set model_id to the learner
+# name itself and store metrics under that same key, e.g. r["logreg"] when
+# r["model_id"] == "logreg" — distinct from skribe cache files, where
+# model_id is the LLM model ID and metrics live under the "skribe" key.
+BASELINE_MODELS = {"logreg", "xgboost", "tabpfn"}
+
 # Ordered oldest → newest. release_date is approximate; used as the x-axis value.
 MODEL_PROGRESSION = [
     # OpenAI
@@ -320,70 +326,65 @@ def build_summary_df(results: list[dict]) -> pd.DataFrame:
     are never confused with the LLM model dimension.  Baseline learners
     (logreg, xgboost, tabpfn) appear once per dataset with no LLM association.
 
-    Accepts both skribe cache dicts (which have "dataset" and "model_id" keys)
-    and baseline-only cache dicts (which have "logreg"/"xgboost"/"tabpfn" keys but
-    no "dataset"/"model_id").  Callers must inject a "dataset" key into baseline-only
-    dicts before passing them here (collate.py does this).
+    Each cache dict has top-level "dataset" and "model_id" keys. For skribe
+    runs, model_id is the LLM model ID and metrics live under the "skribe"
+    key. For baseline runs, model_id is the learner name itself
+    (logreg/xgboost/tabpfn) and metrics live under that same key, e.g.
+    r["logreg"] when r["model_id"] == "logreg".
     """
     rows = []
     model_meta = {m["model_id"]: m for m in MODEL_PROGRESSION}
-    seen_baselines: set[tuple] = set()  # (dataset, learner) — emit baselines once
 
     for r in results:
         dataset = r.get("dataset")
         model_id = r.get("model_id")
 
-        # skribe rows carry both dataset and model_id
-        if dataset and model_id:
-            meta = model_meta.get(model_id, {})
-            llm_label = meta.get("label", model_id)
+        if not dataset or not model_id:
+            continue
 
-            if "skribe" in r and "error" not in r["skribe"]:
-                m = r["skribe"]
-                web_search = meta.get("web_search", False)
-                row = {
-                    "dataset": dataset,
-                    "model_id": model_id,
-                    "llm_label": llm_label,
-                    "release_date": str(meta.get("release_date", "")),
-                    "family": meta.get("family", ""),
-                    "provider": meta.get("provider", "openai"),
-                    "web_search": web_search,
-                    "learner": f"skribe[{llm_label}]",
-                    "n_rows": r.get("n_rows"),
-                    "n_cols": r.get("n_cols"),
-                    "n_classes": r.get("n_classes"),
-                }
-                row.update({k: v for k, v in m.items() if k not in ("fit_time_s",)})
-                row["fit_time_s"] = m.get("fit_time_s")
-                rows.append(row)
+        if model_id in BASELINE_MODELS:
+            m = r.get(model_id, {})
+            if "error" in m:
+                continue
+            row = {
+                "dataset": dataset,
+                "model_id": None,
+                "llm_label": None,
+                "release_date": None,
+                "family": None,
+                "provider": None,
+                "learner": model_id,
+                "n_rows": r.get("n_rows"),
+                "n_cols": r.get("n_cols"),
+                "n_classes": r.get("n_classes"),
+            }
+            row.update({k: v for k, v in m.items() if k not in ("fit_time_s",)})
+            row["fit_time_s"] = m.get("fit_time_s")
+            rows.append(row)
+            continue
 
-        # Emit baselines from any dict that has a dataset key (including skribe
-        # cache files that embed baselines from the old run_model_progression flow).
-        if dataset:
-            for learner in ("logreg", "xgboost", "tabpfn"):
-                key = (dataset, learner)
-                if key in seen_baselines:
-                    continue
-                if learner not in r or "error" in r[learner]:
-                    continue
-                seen_baselines.add(key)
-                m = r[learner]
-                row = {
-                    "dataset": dataset,
-                    "model_id": None,
-                    "llm_label": None,
-                    "release_date": None,
-                    "family": None,
-                    "provider": None,
-                    "learner": learner,
-                    "n_rows": r.get("n_rows"),
-                    "n_cols": r.get("n_cols"),
-                    "n_classes": r.get("n_classes"),
-                }
-                row.update({k: v for k, v in m.items() if k not in ("fit_time_s",)})
-                row["fit_time_s"] = m.get("fit_time_s")
-                rows.append(row)
+        meta = model_meta.get(model_id, {})
+        llm_label = meta.get("label", model_id)
+
+        if "skribe" in r and "error" not in r["skribe"]:
+            m = r["skribe"]
+            web_search = meta.get("web_search", False)
+            row = {
+                "dataset": dataset,
+                "model_id": model_id,
+                "llm_label": llm_label,
+                "release_date": str(meta.get("release_date", "")),
+                "family": meta.get("family", ""),
+                "provider": meta.get("provider", "openai"),
+                "web_search": web_search,
+                "learner": f"skribe[{llm_label}]",
+                "n_rows": r.get("n_rows"),
+                "n_cols": r.get("n_cols"),
+                "n_classes": r.get("n_classes"),
+            }
+            row.update({k: v for k, v in m.items() if k not in ("fit_time_s",)})
+            row["fit_time_s"] = m.get("fit_time_s")
+            rows.append(row)
 
     return pd.DataFrame(rows)
 

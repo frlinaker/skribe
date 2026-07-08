@@ -37,6 +37,23 @@ class _OutputTruncated(Exception):
     """Raised when the LLM signals finish_reason='length' (output cut off)."""
 
 
+class _ContextWindowExceeded(Exception):
+    """Raised when the API rejects the prompt as exceeding the model's real
+    input token limit. Carries that limit (parsed from the provider's error
+    message) so callers can correct a wrong/stale value from
+    litellm.get_model_info() instead of guessing via headroom shrink steps.
+    """
+
+    def __init__(self, message: str, real_max_input_tokens: Optional[int] = None):
+        super().__init__(message)
+        self.real_max_input_tokens = real_max_input_tokens
+
+
+# Matches OpenAI's context-window error text, e.g.:
+#   "Input tokens exceed the configured limit of 272000 tokens."
+_CONTEXT_LIMIT_RE = re.compile(r"configured limit of (\d[\d,]*)\s*tokens", re.IGNORECASE)
+
+
 def resolve_model(model: Optional[str]) -> str:
     """Resolve the model string for an estimator.
 
@@ -210,13 +227,18 @@ class BaseSkribeEstimator(BaseEstimator):
         except _OutputTruncated:
             raise
         except litellm.ContextWindowExceededError as e:
-            # Local token counter undercounted (common with Gemini). Let _fit
-            # shrink the dataset and retry rather than failing hard.
+            # Local token counter (or litellm's get_model_info) undercounted or
+            # is stale — the provider's error message carries the real limit,
+            # so parse it out rather than guessing via headroom shrink steps.
+            match = _CONTEXT_LIMIT_RE.search(str(e))
+            real_max_input_tokens = int(match.group(1).replace(",", "")) if match else None
             logger.warning(
                 "Context window exceeded at API level (local token count was inaccurate) — "
-                "will reduce dataset and retry. Error: %s", e
+                "will reduce dataset and retry%s. Error: %s",
+                f" using real limit {real_max_input_tokens:,} tokens" if real_max_input_tokens else "",
+                e,
             )
-            raise _OutputTruncated("")
+            raise _ContextWindowExceeded(str(e), real_max_input_tokens)
         except litellm.RateLimitError as e:
             logger.warning("Rate limit hit — sleeping 60s before re-raising. Error: %s", e)
             time.sleep(60)
@@ -363,28 +385,38 @@ class BaseSkribeEstimator(BaseEstimator):
 
         return litellm.token_counter(model=self.model, messages=messages)
 
-    def _truncate_to_context_window(self, df, prompt_template: str, headroom: float = _CONTEXT_HEADROOM) -> "pd.DataFrame":
+    def _truncate_to_context_window(
+        self, df, prompt_template: str, headroom: float = _CONTEXT_HEADROOM,
+        max_input_override: Optional[int] = None,
+    ) -> "pd.DataFrame":
         """Return df truncated so the full prompt fits within the model's context window.
 
         Builds the prompt with all rows, counts tokens, and removes rows from the
         bottom until it fits. Warns once if any truncation occurs. If the model's
         context window is unknown, returns df unchanged with a warning.
+
+        ``max_input_override`` takes precedence over litellm.get_model_info() —
+        used once the API has told us its real limit, since that registry value
+        can be stale or wrong (see _ContextWindowExceeded).
         """
         import litellm
         import pandas as pd
 
-        try:
-            info = litellm.get_model_info(self.model)
-            max_input = info.get("max_input_tokens")
-            if not max_input:
-                raise ValueError("max_input_tokens not available")
-        except Exception as e:
-            logger.warning(
-                "Could not determine context window for model %r (%s) — "
-                "skipping token-limit check.",
-                self.model, e,
-            )
-            return df
+        if max_input_override:
+            max_input = max_input_override
+        else:
+            try:
+                info = litellm.get_model_info(self.model)
+                max_input = info.get("max_input_tokens")
+                if not max_input:
+                    raise ValueError("max_input_tokens not available")
+            except Exception as e:
+                logger.warning(
+                    "Could not determine context window for model %r (%s) — "
+                    "skipping token-limit check.",
+                    self.model, e,
+                )
+                return df
 
         budget = int(max_input * headroom)
 
@@ -481,8 +513,11 @@ class BaseSkribeEstimator(BaseEstimator):
         )
 
         headroom = _CONTEXT_HEADROOM
+        max_input_override = None
         while True:
-            sample_df = self._truncate_to_context_window(data, prompt_template, headroom=headroom)
+            sample_df = self._truncate_to_context_window(
+                data, prompt_template, headroom=headroom, max_input_override=max_input_override,
+            )
             base_prompt = prompt_template.replace("{data}", sample_df.to_csv(index=False))
 
             self.fit_prompt_ = base_prompt
@@ -504,6 +539,29 @@ class BaseSkribeEstimator(BaseEstimator):
                     base_prompt, validation_rows, validation_labels, web_search=self.web_search
                 )
                 break
+            except _ContextWindowExceeded as e:
+                if e.real_max_input_tokens and e.real_max_input_tokens != max_input_override:
+                    # We now know the model's actual limit (litellm's registry
+                    # value was wrong/stale) — retry once with that instead of
+                    # spending headroom-shrink budget on a guess.
+                    logger.warning(
+                        "Correcting max_input_tokens for %r to the API-reported "
+                        "value %d and retrying.", self.model, e.real_max_input_tokens,
+                    )
+                    max_input_override = e.real_max_input_tokens
+                    continue
+                new_headroom = headroom - _CONTEXT_HEADROOM_STEP
+                if new_headroom < 0.50:
+                    raise RuntimeError(
+                        f"Context window exceeded even at {headroom:.0%} headroom "
+                        f"(floor is 50%). The prompt is too large for this model."
+                    )
+                logger.warning(
+                    "Context window still exceeded at headroom=%.0f%% — shrinking to "
+                    "%.0f%% and retrying.",
+                    headroom * 100, new_headroom * 100,
+                )
+                headroom = new_headroom
             except _OutputTruncated:
                 new_headroom = headroom - _CONTEXT_HEADROOM_STEP
                 if new_headroom < 0.50:

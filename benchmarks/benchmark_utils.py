@@ -389,10 +389,10 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
     if "web_search" not in pl_data.columns:
         pl_data["web_search"] = False
 
-    # Vertical gap (data units, accuracy is 0-1) between a dot and its label's
-    # bottom edge — without this, va="bottom" anchors the label right at the
-    # dot's center, so the marker overlaps the label's lower half.
-    _LABEL_Y_OFFSET = 0.015
+    # Vertical gap (points, screen units) between a dot and its label's bottom
+    # edge — without this, va="bottom" anchors the label right at the dot's
+    # center, so the marker overlaps the label's lower half.
+    _LABEL_Y_OFFSET_PT = 3
 
     _annotation_texts: list = []
     _scatter_objects: list = []
@@ -442,10 +442,11 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                     zorder=4,
                 )
                 _scatter_objects.append(sc)
-                txt = ax.text(
-                    row["release_date"],
-                    row["accuracy"] + _LABEL_Y_OFFSET,
+                txt = ax.annotate(
                     row["llm_label"],
+                    xy=(row["release_date"], row["accuracy"]),
+                    xytext=(0, _LABEL_Y_OFFSET_PT),
+                    textcoords="offset points",
                     ha="center",
                     va="bottom",
                     fontsize=7.5,
@@ -496,10 +497,11 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                     zorder=5,
                 )
                 _scatter_objects.append(sc)
-                txt = ax.text(
-                    row["release_date"],
-                    row["accuracy"] + _LABEL_Y_OFFSET,
+                txt = ax.annotate(
                     row["llm_label"],
+                    xy=(row["release_date"], row["accuracy"]),
+                    xytext=(0, _LABEL_Y_OFFSET_PT),
+                    textcoords="offset points",
                     ha="center",
                     va="bottom",
                     fontsize=7.5,

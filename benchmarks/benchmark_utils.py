@@ -392,7 +392,18 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
     # Vertical gap (points, screen units) between a dot and its label's bottom
     # edge — without this, va="bottom" anchors the label right at the dot's
     # center, so the marker overlaps the label's lower half.
-    _LABEL_Y_OFFSET_PT = 4
+    _LABEL_Y_OFFSET_PT = 5
+
+    # Manual per-label nudges for spots the generic overlap logic below
+    # doesn't handle well (e.g. a label sitting on top of a neighboring dot
+    # rather than another label). xy offsets are in points; "bg" adds a white
+    # background for labels crossing a busy line/other label.
+    _LABEL_OVERRIDES = {
+        "Gemini 2.5 Flash": {"dx": -22},
+        "Gemini 2.5 Pro": {"dx": -10},
+        "GPT-5.5": {"bg": True},
+        "Gemini 3.5 Flash": {"bg": True},
+    }
 
     _annotation_texts: list = []
     _scatter_objects: list = []
@@ -444,16 +455,22 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                     zorder=4,
                 )
                 _scatter_objects.append(sc)
+                override = _LABEL_OVERRIDES.get(row["llm_label"], {})
                 txt = ax.annotate(
                     row["llm_label"],
                     xy=(row["release_date"], row["accuracy"]),
-                    xytext=(0, _LABEL_Y_OFFSET_PT),
+                    xytext=(override.get("dx", 0), _LABEL_Y_OFFSET_PT),
                     textcoords="offset points",
                     ha="center",
                     va="bottom",
                     fontsize=9.5,
                     color=color,
                     zorder=6,
+                    bbox=(
+                        dict(boxstyle="round,pad=0.15", fc="white", ec="none", alpha=0.85)
+                        if override.get("bg")
+                        else None
+                    ),
                 )
                 _annotation_texts.append(txt)
 
@@ -497,16 +514,22 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                     zorder=5,
                 )
                 _scatter_objects.append(sc)
+                override = _LABEL_OVERRIDES.get(row["llm_label"], {})
                 txt = ax.annotate(
                     row["llm_label"],
                     xy=(row["release_date"], row["accuracy"]),
-                    xytext=(0, _LABEL_Y_OFFSET_PT),
+                    xytext=(override.get("dx", 0), _LABEL_Y_OFFSET_PT),
                     textcoords="offset points",
                     ha="center",
                     va="bottom",
                     fontsize=9.5,
                     color=color,
                     zorder=6,
+                    bbox=(
+                        dict(boxstyle="round,pad=0.15", fc="white", ec="none", alpha=0.85)
+                        if override.get("bg")
+                        else None
+                    ),
                 )
                 _annotation_texts.append(txt)
 

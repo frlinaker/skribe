@@ -11,11 +11,12 @@ import json
 import logging
 import os
 import time
-from datetime import date
+from datetime import datetime
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import yaml
 from adjustText import adjust_text
 from sklearn.datasets import fetch_openml
 from sklearn.metrics import (
@@ -31,198 +32,96 @@ logger = logging.getLogger("skribe.progression")
 
 CACHE_SCHEMA = "progression-v1"
 
+CONFIG_PATH = Path(__file__).parent / "config.yaml"
+
+
+def _lighten(hex_color: str, amount: float = 0.35) -> str:
+    """Blend hex_color toward white by amount (0-1). Used to auto-derive a
+    "+web" variant's color from its base model's color."""
+    hex_color = hex_color.lstrip("#")
+    r, g, b = (int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
+    r, g, b = (int(c + (255 - c) * amount) for c in (r, g, b))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _load_config() -> dict:
+    with open(CONFIG_PATH) as f:
+        return yaml.safe_load(f)
+
+
+def _build_model_progression(config: dict) -> list[dict]:
+    """Expand config["models"] (base models only) into the flat, ordered
+    list every script expects: each base model followed by its "+web"
+    sibling (auto-derived) when supports_web is true.
+    """
+    progression = []
+    for entry in config["models"]:
+        release_date = entry["release_date"]
+        if isinstance(release_date, str):
+            release_date = datetime.strptime(release_date, "%Y-%m-%d").date()
+
+        base = {
+            "model_id": entry["model_id"],
+            "label": entry["label"],
+            "release_date": release_date,
+            "family": entry["family"],
+            "provider": entry["provider"],
+            "color": entry["color"],
+        }
+        if "vertex_region" in entry:
+            base["vertex_region"] = entry["vertex_region"]
+        progression.append(base)
+
+        if entry.get("supports_web"):
+            web = dict(base)
+            web["model_id"] = f"{entry['model_id']}+web"
+            web["base_model_id"] = entry["model_id"]
+            web["label"] = f"{entry['label']} +web"
+            web["web_search"] = True
+            web["color"] = entry.get("web_color") or _lighten(entry["color"])
+            progression.append(web)
+
+    return progression
+
+
+def _build_default_datasets(config: dict) -> dict:
+    """Expand config["datasets"] into the {name: spec_tuple} shape every
+    script expects: (openml_name, version) for OpenML datasets, or
+    (None, None, csv_path, target_col, description) for CSV-backed ones.
+    csv_path (if given) is resolved relative to the benchmarks/ directory.
+    """
+    datasets = {}
+    for entry in config["datasets"]:
+        if "csv_path" in entry:
+            csv_path = (Path(__file__).parent / entry["csv_path"]).resolve()
+            datasets[entry["name"]] = (
+                None,
+                None,
+                csv_path,
+                entry["target_col"],
+                entry.get("description", ""),
+            )
+        else:
+            datasets[entry["name"]] = (entry["openml_name"], entry["version"])
+    return datasets
+
+
+_CONFIG = _load_config()
+
 # Baseline learner names. Cache files for these set model_id to the learner
 # name itself and store metrics under that same key, e.g. r["logreg"] when
 # r["model_id"] == "logreg" — distinct from skribe cache files, where
 # model_id is the LLM model ID and metrics live under the "skribe" key.
-BASELINE_MODELS = {"logreg", "xgboost", "tabpfn"}
+BASELINE_MODELS = {b["name"] for b in _CONFIG["baselines"]}
+
+# name -> {label, color}, for scripts that need baseline display metadata
+# (e.g. build_skribe_inspector.py).
+BASELINE_META = {b["name"]: {"label": b["label"], "color": b["color"]} for b in _CONFIG["baselines"]}
 
 # Ordered oldest → newest. release_date is approximate; used as the x-axis value.
-MODEL_PROGRESSION = [
-    # OpenAI
-    {
-        "model_id": "gpt-4o",
-        "label": "GPT-4o",
-        "release_date": date(2024, 5, 13),
-        "family": "GPT-4",
-        "provider": "openai",
-    },
-    {
-        "model_id": "gpt-4o-mini",
-        "label": "GPT-4o mini",
-        "release_date": date(2024, 7, 18),
-        "family": "GPT-4",
-        "provider": "openai",
-    },
-    {
-        "model_id": "gpt-4o-mini+web",
-        "base_model_id": "gpt-4o-mini",
-        "label": "GPT-4o mini +web",
-        "release_date": date(2024, 7, 18),
-        "family": "GPT-4",
-        "provider": "openai",
-        "web_search": True,
-    },
-    {
-        "model_id": "gpt-4.1",
-        "label": "GPT-4.1",
-        "release_date": date(2025, 4, 14),
-        "family": "GPT-4.1",
-        "provider": "openai",
-    },
-    {
-        "model_id": "gpt-4.1+web",
-        "base_model_id": "gpt-4.1",
-        "label": "GPT-4.1 +web",
-        "release_date": date(2025, 4, 14),
-        "family": "GPT-4.1",
-        "provider": "openai",
-        "web_search": True,
-    },
-    {
-        "model_id": "gpt-5.4-mini",
-        "label": "GPT-5.4 mini",
-        "release_date": date(2026, 3, 17),  # GA: Mar 17 2026
-        "family": "GPT-5",
-        "provider": "openai",
-    },
-    {
-        "model_id": "gpt-5.4-mini+web",
-        "base_model_id": "gpt-5.4-mini",
-        "label": "GPT-5.4 mini +web",
-        "release_date": date(2026, 3, 17),
-        "family": "GPT-5",
-        "provider": "openai",
-        "web_search": True,
-    },
-    {
-        "model_id": "gpt-5.5",
-        "label": "GPT-5.5",
-        "release_date": date(2026, 4, 23),  # GA: Apr 23 2026
-        "family": "GPT-5",
-        "provider": "openai",
-    },
-    {
-        "model_id": "gpt-5.5+web",
-        "base_model_id": "gpt-5.5",
-        "label": "GPT-5.5 +web",
-        "release_date": date(2026, 4, 23),  # GA: Apr 23 2026
-        "family": "GPT-5",
-        "provider": "openai",
-        "web_search": True,
-    },
-    # Google Gemini (via Vertex AI) — ordered oldest GA → newest
-    {
-        "model_id": "vertex_ai/gemini-2.5-flash",
-        "label": "Gemini 2.5 Flash",
-        "release_date": date(2025, 5, 20),  # GA: May 20 2025
-        "family": "Gemini 2.5",
-        "provider": "google",
-        "vertex_region": "us-central1",
-    },
-    {
-        "model_id": "vertex_ai/gemini-2.5-flash+web",
-        "base_model_id": "vertex_ai/gemini-2.5-flash",
-        "label": "Gemini 2.5 Flash +web",
-        "release_date": date(2025, 5, 20),
-        "family": "Gemini 2.5",
-        "provider": "google",
-        "vertex_region": "us-central1",
-        "web_search": True,
-    },
-    {
-        "model_id": "vertex_ai/gemini-2.5-pro",
-        "label": "Gemini 2.5 Pro",
-        "release_date": date(2025, 6, 5),  # GA: Jun 5 2025
-        "family": "Gemini 2.5",
-        "provider": "google",
-        "vertex_region": "us-central1",
-    },
-    {
-        "model_id": "vertex_ai/gemini-2.5-pro+web",
-        "base_model_id": "vertex_ai/gemini-2.5-pro",
-        "label": "Gemini 2.5 Pro +web",
-        "release_date": date(2025, 6, 5),
-        "family": "Gemini 2.5",
-        "provider": "google",
-        "vertex_region": "us-central1",
-        "web_search": True,
-    },
-    {
-        "model_id": "vertex_ai/gemini-2.5-flash-lite",
-        "label": "Gemini 2.5 Flash Lite",
-        "release_date": date(2025, 7, 22),  # GA: Jul 22 2025
-        "family": "Gemini 2.5",
-        "provider": "google",
-        "vertex_region": "us-central1",
-    },
-    {
-        "model_id": "vertex_ai/gemini-2.5-flash-lite+web",
-        "base_model_id": "vertex_ai/gemini-2.5-flash-lite",
-        "label": "Gemini 2.5 Flash Lite +web",
-        "release_date": date(2025, 7, 22),
-        "family": "Gemini 2.5",
-        "provider": "google",
-        "vertex_region": "us-central1",
-        "web_search": True,
-    },
-    {
-        "model_id": "vertex_ai/gemini-3.5-flash",
-        "label": "Gemini 3.5 Flash",
-        "release_date": date(2026, 5, 19),
-        "family": "Gemini 3",
-        "provider": "google",
-        "vertex_region": "asia-southeast1",
-    },
-    {
-        "model_id": "vertex_ai/gemini-3.5-flash+web",
-        "base_model_id": "vertex_ai/gemini-3.5-flash",
-        "label": "Gemini 3.5 Flash +web",
-        "release_date": date(2026, 5, 19),
-        "family": "Gemini 3",
-        "provider": "google",
-        "vertex_region": "asia-southeast1",
-        "web_search": True,
-    },
-]
+MODEL_PROGRESSION = _build_model_progression(_CONFIG)
 
-DEFAULT_DATASETS = {
-    "adult": ("adult", 2),
-    "credit-g": ("credit-g", 1),
-    "bank-marketing": ("bank-marketing", 1),
-    "mushroom": ("mushroom", 1),
-    "car": ("car", 3),
-    "nursery": ("nursery", 3),
-    "vote": ("vote", 1),
-    "tic-tac-toe": ("tic-tac-toe", 1),
-    "kr-vs-kp": ("kr-vs-kp", 1),
-    "monks-2": ("monks-problems-2", 1),
-    "soybean": ("soybean", 1),
-    "hepatitis": ("hepatitis", 1),
-    "lymph": ("lymph", 1),
-    "zoo": ("zoo", 1),
-    "heart-statlog": ("heart-statlog", 1),
-    "spotify-genre": (
-        None, None,
-        Path(__file__).parent.parent / "examples" / "external_data" / "spotify_genre.csv",
-        "genre",
-        (
-            "Spotify track genre classification. Each row is a unique track. "
-            "Target is the playlist genre: edm, latin, pop, r&b, rap, rock. "
-            "Features include track_name and track_artist (text identifiers useful "
-            "for world-knowledge lookup), track_popularity (0-100 Spotify score), "
-            "and audio features: danceability (0-1, rhythmic suitability for dancing), "
-            "energy (0-1, intensity/activity), key (musical key 0-11), "
-            "loudness (dB, typically -60 to 0), mode (1=major, 0=minor), "
-            "speechiness (0-1, presence of spoken words), "
-            "acousticness (0-1, confidence track is acoustic), "
-            "instrumentalness (0-1, predicts no vocals), "
-            "liveness (0-1, presence of live audience), "
-            "valence (0-1, musical positiveness), tempo (BPM), "
-            "duration_ms (track length in milliseconds)."
-        ),
-    ),
-}
+DEFAULT_DATASETS = _build_default_datasets(_CONFIG)
 
 
 def load_dataset(openml_name, version, max_rows: int | None, csv_path=None, target_col=None, description=None, require_description=True):

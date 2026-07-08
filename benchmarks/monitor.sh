@@ -10,6 +10,22 @@ PYTHON=".venv/bin/python"
 CACHE_DIR="artifacts/benchmark_results/cache"
 LOG_LLM="artifacts/benchmark_results/run_llm.log"
 
+# Baseline learner names + dataset count, derived from benchmarks/config.yaml.
+BASELINE_LEARNERS=($($PYTHON - <<'EOF'
+import sys
+sys.path.insert(0, "benchmarks")
+from benchmark_utils import BASELINE_META
+for name in BASELINE_META:
+    print(name)
+EOF
+))
+NUM_DATASETS=$($PYTHON -c "
+import sys
+sys.path.insert(0, 'benchmarks')
+from benchmark_utils import DEFAULT_DATASETS
+print(len(DEFAULT_DATASETS))
+")
+
 count_cache() {
     local pattern="$1"
     find "$CACHE_DIR" -name "$pattern" 2>/dev/null | wc -l | tr -d ' '
@@ -38,12 +54,14 @@ while true; do
     echo "── $(date '+%H:%M:%S') ─────────────────────────────────────────────"
 
     # Cache file counts per model type
-    LOGREG=$(count_cache "*-logreg-*.json")
-    XGBOOST=$(count_cache "*-xgboost-*.json")
-    TABPFN=$(count_cache "*-tabpfn-*.json")
     SKRIBE=$(count_cache "*.json")
-    SKRIBE=$((SKRIBE - LOGREG - XGBOOST - TABPFN))
-    echo "  cache files — logreg: $LOGREG/16  xgboost: $XGBOOST/16  tabpfn: $TABPFN/16  skribe: $SKRIBE"
+    LINE="  cache files —"
+    for LEARNER in "${BASELINE_LEARNERS[@]}"; do
+        COUNT=$(count_cache "*-${LEARNER}-*.json")
+        SKRIBE=$((SKRIBE - COUNT))
+        LINE="$LINE $LEARNER: $COUNT/$NUM_DATASETS "
+    done
+    echo "$LINE skribe: $SKRIBE"
 
     # LLM log summary
     summarise_log "$LOG_LLM"

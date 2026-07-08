@@ -96,6 +96,24 @@ dataset accuracy table, and writes charts. Runs automatically at the end of
 and `--llms` to filter, and `--output-dir` to point at a different cache
 location.
 
+## Adding a dataset or model
+
+Datasets, LLM models, and baseline learners are all defined once in
+`benchmarks/config.yaml` — every script reads from there via
+`benchmark_utils.py` (`DEFAULT_DATASETS`, `MODEL_PROGRESSION`,
+`BASELINE_MODELS`/`BASELINE_META`), so there's nothing to update elsewhere.
+
+- **Dataset**: add an entry under `datasets:` — `openml_name` + `version` for
+  an OpenML dataset, or `csv_path` (relative to `benchmarks/`) + `target_col`
+  + `description` for a CSV-backed one.
+- **Model**: add an entry under `models:` — only base (non-`+web`) models are
+  listed; a `+web` sibling is generated automatically for any entry with
+  `supports_web: true` (label suffixed " +web", color lightened unless
+  `web_color` is given explicitly).
+- **Baseline learner**: add an entry under `baselines:` with `name`, `label`,
+  `color`. Also requires a corresponding classifier factory in
+  `benchmark_utils.py` and a case in `run_openml_fit.py`'s baseline dispatch.
+
 ## Other scripts
 
 - `benchmark_utils.py` — shared dataset loaders, `DEFAULT_DATASETS`,

@@ -21,39 +21,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from skribe.prompt_markers import CONTEXT_END, CONTEXT_START, DATA_MARKER
 
-# ---------------------------------------------------------------------------
-# Model display config — extend here when new models are added to the bench
-# ---------------------------------------------------------------------------
+sys.path.insert(0, str(Path(__file__).parent))
+from benchmark_utils import BASELINE_META, MODEL_PROGRESSION
 
-MODEL_META = {
-    # OpenAI — base
-    "gpt-4o":           {"label": "GPT-4o",            "color": "#d97575"},
-    "gpt-4o-mini":      {"label": "GPT-4o mini",       "color": "#c55f5f"},
-    "gpt-4.1":          {"label": "GPT-4.1",           "color": "#b54848"},
-    "gpt-5.4-mini":     {"label": "GPT-5.4 mini",      "color": "#a03030"},
-    "gpt-5.5":          {"label": "GPT-5.5",           "color": "#8b1a1a"},
-    # OpenAI — +web
-    "gpt-4o-mini+web":  {"label": "GPT-4o mini +web",  "color": "#e8a0a0"},
-    "gpt-4.1+web":      {"label": "GPT-4.1 +web",      "color": "#d98888"},
-    "gpt-5.4-mini+web": {"label": "GPT-5.4 mini +web", "color": "#c87070"},
-    "gpt-5.5+web":      {"label": "GPT-5.5 +web",      "color": "#b85858"},
-    # Google — base
-    "vertex_ai/gemini-2.5-flash":      {"label": "Gemini 2.5 Flash",      "color": "#4285f4"},
-    "vertex_ai/gemini-2.5-pro":        {"label": "Gemini 2.5 Pro",        "color": "#2c6fd4"},
-    "vertex_ai/gemini-2.5-flash-lite": {"label": "Gemini 2.5 Flash Lite", "color": "#5b9cf5"},
-    "vertex_ai/gemini-3.5-flash":      {"label": "Gemini 3.5 Flash",      "color": "#1a56c4"},
-    # Google — +web
-    "vertex_ai/gemini-2.5-flash+web":      {"label": "Gemini 2.5 Flash +web",      "color": "#80b0fa"},
-    "vertex_ai/gemini-2.5-pro+web":        {"label": "Gemini 2.5 Pro +web",        "color": "#6a9de8"},
-    "vertex_ai/gemini-2.5-flash-lite+web": {"label": "Gemini 2.5 Flash Lite +web", "color": "#90bffc"},
-    "vertex_ai/gemini-3.5-flash+web":      {"label": "Gemini 3.5 Flash +web",      "color": "#5080d8"},
-}
-
-BASELINE_META = {
-    "logreg": {"label": "LogReg", "color": "#9c27b0"},
-    "xgboost": {"label": "XGBoost", "color": "#ff6f00"},
-    "tabpfn": {"label": "TabPFN", "color": "#00838f"},
-}
+# model_id -> {label, color}, read from benchmarks/config.yaml via
+# benchmark_utils.py so this stays in sync with the models actually run.
+MODEL_META = {m["model_id"]: {"label": m["label"], "color": m["color"]} for m in MODEL_PROGRESSION}
 
 
 # ---------------------------------------------------------------------------

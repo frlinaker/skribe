@@ -1,0 +1,170 @@
+# Shared config for the skribe benchmarks. Single source of truth for
+# datasets, LLM models, and baseline learners — read by benchmark_utils.py
+# and, in turn, by every script that imports from it (run_openml_fit.py,
+# collate.py, build_skribe_inspector.py, run_adaptive_fe_benchmark.py,
+# test_large_prompt.py). run_all_models.sh and monitor.sh read it via a
+# small inline-Python bridge since they're shell scripts.
+
+# Ordered oldest -> newest. release_date is approximate; used as the x-axis
+# value in progression charts. Only base (non-"+web") models are listed here
+# — a "+web" sibling is auto-derived for every model with supports_web: true
+# (label + " +web", web_search: true, base_model_id set, color lightened).
+models:
+  # OpenAI
+  - model_id: gpt-4o
+    label: GPT-4o
+    release_date: 2024-05-13
+    family: GPT-4
+    provider: openai
+    color: "#d97575"
+  - model_id: gpt-4o-mini
+    label: GPT-4o mini
+    release_date: 2024-07-18
+    family: GPT-4
+    provider: openai
+    color: "#c55f5f"
+    supports_web: true
+    web_color: "#e8a0a0"
+  - model_id: gpt-4.1
+    label: GPT-4.1
+    release_date: 2025-04-14
+    family: GPT-4.1
+    provider: openai
+    color: "#b54848"
+    supports_web: true
+    web_color: "#d98888"
+  - model_id: gpt-5.4-mini
+    label: GPT-5.4 mini
+    release_date: 2026-03-17  # GA: Mar 17 2026
+    family: GPT-5
+    provider: openai
+    color: "#a03030"
+    supports_web: true
+    web_color: "#c87070"
+  - model_id: gpt-5.5
+    label: GPT-5.5
+    release_date: 2026-04-23  # GA: Apr 23 2026
+    family: GPT-5
+    provider: openai
+    color: "#8b1a1a"
+    supports_web: true
+    web_color: "#b85858"
+
+  # Google Gemini (via Vertex AI) — ordered oldest GA -> newest
+  - model_id: vertex_ai/gemini-2.5-flash
+    label: Gemini 2.5 Flash
+    release_date: 2025-05-20  # GA: May 20 2025
+    family: Gemini 2.5
+    provider: google
+    vertex_region: us-central1
+    color: "#4285f4"
+    supports_web: true
+    web_color: "#80b0fa"
+  - model_id: vertex_ai/gemini-2.5-pro
+    label: Gemini 2.5 Pro
+    release_date: 2025-06-05  # GA: Jun 5 2025
+    family: Gemini 2.5
+    provider: google
+    vertex_region: us-central1
+    color: "#2c6fd4"
+    supports_web: true
+    web_color: "#6a9de8"
+  - model_id: vertex_ai/gemini-2.5-flash-lite
+    label: Gemini 2.5 Flash Lite
+    release_date: 2025-07-22  # GA: Jul 22 2025
+    family: Gemini 2.5
+    provider: google
+    vertex_region: us-central1
+    color: "#5b9cf5"
+    supports_web: true
+    web_color: "#90bffc"
+  - model_id: vertex_ai/gemini-3.5-flash
+    label: Gemini 3.5 Flash
+    release_date: 2026-05-19
+    family: Gemini 3
+    provider: google
+    vertex_region: asia-southeast1
+    color: "#1a56c4"
+    supports_web: true
+    web_color: "#5080d8"
+
+# Baseline (non-LLM) learners.
+baselines:
+  - name: logreg
+    label: LogReg
+    color: "#9c27b0"
+  - name: xgboost
+    label: XGBoost
+    color: "#ff6f00"
+  - name: tabpfn
+    label: TabPFN
+    color: "#00838f"
+
+# OpenML datasets use openml_name/version. CSV-backed datasets use csv_path
+# (relative to the benchmarks/ directory), target_col, and description
+# instead. All 16 are used by the main classifier benchmark; datasets
+# is the subset consumed by the (currently smaller) adaptive feature
+# engineering benchmark.
+datasets:
+  - name: adult
+    openml_name: adult
+    version: 2
+  - name: credit-g
+    openml_name: credit-g
+    version: 1
+  - name: bank-marketing
+    openml_name: bank-marketing
+    version: 1
+  - name: mushroom
+    openml_name: mushroom
+    version: 1
+  - name: car
+    openml_name: car
+    version: 3
+  - name: nursery
+    openml_name: nursery
+    version: 3
+  - name: vote
+    openml_name: vote
+    version: 1
+  - name: tic-tac-toe
+    openml_name: tic-tac-toe
+    version: 1
+  - name: kr-vs-kp
+    openml_name: kr-vs-kp
+    version: 1
+  - name: monks-2
+    openml_name: monks-problems-2
+    version: 1
+  - name: soybean
+    openml_name: soybean
+    version: 1
+  - name: hepatitis
+    openml_name: hepatitis
+    version: 1
+  - name: lymph
+    openml_name: lymph
+    version: 1
+  - name: zoo
+    openml_name: zoo
+    version: 1
+  - name: heart-statlog
+    openml_name: heart-statlog
+    version: 1
+  - name: spotify-genre
+    csv_path: ../examples/external_data/spotify_genre.csv
+    target_col: genre
+    description: >-
+      Spotify track genre classification. Each row is a unique track.
+      Target is the playlist genre: edm, latin, pop, r&b, rap, rock.
+      Features include track_name and track_artist (text identifiers useful
+      for world-knowledge lookup), track_popularity (0-100 Spotify score),
+      and audio features: danceability (0-1, rhythmic suitability for dancing),
+      energy (0-1, intensity/activity), key (musical key 0-11),
+      loudness (dB, typically -60 to 0), mode (1=major, 0=minor),
+      speechiness (0-1, presence of spoken words),
+      acousticness (0-1, confidence track is acoustic),
+      instrumentalness (0-1, predicts no vocals),
+      liveness (0-1, presence of live audience),
+      valence (0-1, musical positiveness), tempo (BPM),
+      duration_ms (track length in milliseconds).

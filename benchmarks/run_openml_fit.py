@@ -38,6 +38,7 @@ load_dotenv()
 sys.path.insert(0, os.path.dirname(__file__))
 
 from benchmark_utils import (
+    BASELINE_META,
     DEFAULT_DATASETS,
     MODEL_PROGRESSION,
     _baseline_cache_key,
@@ -50,7 +51,7 @@ from benchmark_utils import (
 
 logger = logging.getLogger("skribe.benchmark")
 
-BASELINE_MODELS = ["logreg", "xgboost", "tabpfn"]
+BASELINE_MODELS = list(BASELINE_META)
 ALL_MODELS = BASELINE_MODELS + ["skribe"]
 _MODEL_LOOKUP = {m["model_id"]: m for m in MODEL_PROGRESSION}
 

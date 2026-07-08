@@ -4,3 +4,4 @@ tabpfn-client>=0.3.0
 google-cloud-aiplatform>=1.159.0
 matplotlib>=3.8.0
 seaborn>=0.13.0
+PyYAML>=6.0

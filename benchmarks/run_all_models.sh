@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Orchestrate the full OpenML benchmark:
-#   1. Baselines (logreg, xgboost, tabpfn) — each model loops 16 datasets sequentially
+#   1. Baselines (from benchmarks/config.yaml) — each model loops all datasets sequentially
 #   2. Skribe LLM variants — every (model, dataset) pair across all providers is
 #      flattened into one queue; --workers workers pull whatever pair is next,
 #      so a slow straggler on one model/provider never idles other workers.
@@ -62,6 +62,16 @@ for _, name in sizes:
 EOF
 ))
 
+# Baseline learner names, derived from benchmarks/config.yaml.
+BASELINE_LEARNERS=($($PYTHON - <<'EOF'
+import sys
+sys.path.insert(0, "benchmarks")
+from benchmark_utils import BASELINE_META
+for name in BASELINE_META:
+    print(name)
+EOF
+))
+
 # ---------------------------------------------------------------------------
 # Baselines — sequential datasets (fast, no API calls)
 # ---------------------------------------------------------------------------
@@ -71,7 +81,7 @@ if [ -z "$SKIP_BASELINES" ]; then
     echo "  Running baselines  (${#DATASETS[@]} datasets each)"
     echo "════════════════════════════════════════════════════════════════"
 
-    for MODEL in logreg xgboost tabpfn; do
+    for MODEL in "${BASELINE_LEARNERS[@]}"; do
         echo ""
         echo "  ── baseline: $MODEL ──"
         for DS in "${DATASETS[@]}"; do

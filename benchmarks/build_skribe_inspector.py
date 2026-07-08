@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Generate benchmarks/prompt_inspector.html from cache files.
+"""Generate benchmarks/skribe_inspector.html from cache files.
 
 Usage:
-    python benchmarks/build_prompt_inspector.py
-    python benchmarks/build_prompt_inspector.py --cache-dir path/to/cache --output path/to/out.html
+    python benchmarks/build_skribe_inspector.py
+    python benchmarks/build_skribe_inspector.py --cache-dir path/to/cache --output path/to/out.html
 
-The script reads every JSON file produced by run_model_progression.py, picks the
-best-accuracy run per (dataset, model) pair, and writes a self-contained HTML
-page with filterable model/dataset chips, percentage bars with baseline reference
-lines, and collapsible prompt + generated-code panels with syntax highlighting.
+The script reads every JSON file produced by run_openml_fit.py (via
+run_all_models.sh), picks the best-accuracy run per (dataset, model) pair, and
+writes a self-contained HTML page with filterable model/dataset chips,
+percentage bars with baseline reference lines, and collapsible prompt +
+generated-code panels with syntax highlighting.
 """
 
 import argparse
@@ -72,21 +73,17 @@ def load_cache(cache_dir: Path) -> tuple[dict, dict]:
     for path in sorted(cache_dir.glob("*.json")):
         data = json.loads(path.read_text())
 
-        if path.name.startswith("baselines-"):
-            # filename: baselines-<dataset>-<hash>.json
-            # The dataset name may contain hyphens so we strip prefix and hash.
-            stem = path.stem  # baselines-<dataset>-<hash>
-            dataset = stem[len("baselines-") :].rsplit("-", 1)[0]
-            baselines[dataset] = {
-                k: data[k]["accuracy"]
-                for k in BASELINE_META
-                if k in data and data[k].get("accuracy") is not None
-            }
-            continue
-
         model_id = data.get("model_id", "")
         dataset = data.get("dataset", "")
         if not model_id or not dataset:
+            continue
+
+        if model_id in BASELINE_META:
+            # filename: <dataset>-<learner>-<hash>.json; metrics live under
+            # data[model_id] (e.g. data["logreg"]["accuracy"]).
+            acc = data.get(model_id, {}).get("accuracy")
+            if acc is not None:
+                baselines.setdefault(dataset, {})[model_id] = acc
             continue
 
         pl = data.get("skribe", {})
@@ -577,7 +574,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--output",
-        default="artifacts/prompt_inspector.html",
+        default="artifacts/skribe_inspector.html",
         help="output HTML file (default: %(default)s)",
     )
     args = parser.parse_args()

@@ -392,7 +392,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
     # Vertical gap (points, screen units) between a dot and its label's bottom
     # edge — without this, va="bottom" anchors the label right at the dot's
     # center, so the marker overlaps the label's lower half.
-    _LABEL_Y_OFFSET_PT = 3
+    _LABEL_Y_OFFSET_PT = 4
 
     _annotation_texts: list = []
     _scatter_objects: list = []
@@ -429,16 +429,18 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
             )
 
             # Individual model dots — weaker models shown slightly faded.
+            # Labels stay fully opaque regardless so every model name reads
+            # equally well; only the dot communicates "not the best so far".
             for _, row in grp.iterrows():
                 is_best = abs(row["accuracy"] - row["best_so_far"]) < 1e-9
-                alpha = 1.0 if is_best else 0.55
+                dot_alpha = 1.0 if is_best else 0.55
                 sc = ax.scatter(
                     row["release_date"],
                     row["accuracy"],
                     marker="o",
                     s=60,
                     color=color,
-                    alpha=alpha,
+                    alpha=dot_alpha,
                     zorder=4,
                 )
                 _scatter_objects.append(sc)
@@ -449,11 +451,9 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                     textcoords="offset points",
                     ha="center",
                     va="bottom",
-                    fontsize=7.5,
+                    fontsize=9.5,
                     color=color,
-                    alpha=alpha,
                     zorder=6,
-                    bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.8),
                 )
                 _annotation_texts.append(txt)
 
@@ -484,7 +484,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
 
             for _, row in grp.iterrows():
                 is_best = abs(row["accuracy"] - row["best_so_far"]) < 1e-9
-                alpha = 0.9 if is_best else 0.5
+                dot_alpha = 0.9 if is_best else 0.5
                 sc = ax.scatter(
                     row["release_date"],
                     row["accuracy"],
@@ -493,7 +493,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                     facecolors="white",
                     edgecolors=color,
                     linewidths=1.5,
-                    alpha=alpha,
+                    alpha=dot_alpha,
                     zorder=5,
                 )
                 _scatter_objects.append(sc)
@@ -504,11 +504,9 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                     textcoords="offset points",
                     ha="center",
                     va="bottom",
-                    fontsize=7.5,
+                    fontsize=9.5,
                     color=color,
-                    alpha=alpha,
                     zorder=6,
-                    bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.8),
                 )
                 _annotation_texts.append(txt)
 

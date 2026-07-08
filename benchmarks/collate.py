@@ -2,17 +2,16 @@
 """Collate cached benchmark results and produce summary tables and charts.
 
 Reads all JSON files from --output-dir/cache/ and merges them into a unified
-DataFrame.  Handles two file naming conventions:
+DataFrame.  All cache files share the same format:
 
-  skribe files : ``{dataset}-{model_id}-{hash}.json``
-      Must contain ``dataset`` and ``model_id`` keys at the top level.
+  ``{dataset}-{model_id}-{hash}.json``
 
-  baseline files    : ``baselines-{dataset}-{hash}.json``
-      Contain learner-name keys (``logreg``, ``xgboost``, ``tabpfn``) but no
-      ``dataset`` / ``model_id`` keys.  The dataset name is inferred from the
-      file name (second dash-separated segment).
+Each file must contain ``dataset`` and ``model_id`` keys at the top level.
+Baseline files (logreg / xgboost / tabpfn) set ``model_id`` to the learner
+name and store metrics under that same key.  Skribe files set ``model_id`` to
+the LLM model ID and store metrics under the ``"skribe"`` key.
 
-Both file types are merged via ``build_summary_df()`` and passed to
+Results are merged via ``build_summary_df()`` and passed to
 ``print_summary_table()`` (model × dataset accuracy grid) and
 ``plot_progression()`` (timeline / heatmap / bar charts).
 
@@ -34,7 +33,6 @@ import argparse
 import json
 import logging
 import os
-import re
 import sys
 from pathlib import Path
 
@@ -55,8 +53,7 @@ from benchmark_utils import (
 
 logger = logging.getLogger("skribe.progression")
 
-_BASELINE_RE = re.compile(r"^baselines-(.+)-[0-9a-f]{16}\.json$")
-_SKRIBE_RE = re.compile(r"^(.+?)-(.+)-[0-9a-f]{16}\.json$")
+BASELINE_MODELS = {"logreg", "xgboost", "tabpfn"}
 
 
 def load_cache_results(
@@ -66,9 +63,6 @@ def load_cache_results(
 ) -> list[dict]:
     """Read all JSON cache files from *cache_dir* and return a flat list of dicts.
 
-    Baseline files are augmented with a ``"dataset"`` key inferred from the
-    file name so that ``build_summary_df()`` can process them uniformly.
-
     Parameters
     ----------
     cache_dir:
@@ -77,9 +71,8 @@ def load_cache_results(
     dataset_filter:
         When given, only include records whose dataset name is in this list.
     llm_filter:
-        When given, only include skribe records whose ``model_id`` is in
-        this list.  Baseline records are always included (they are
-        model-independent).
+        When given, only include skribe records whose ``model_id`` is in this
+        list.  Baseline records (logreg / xgboost / tabpfn) are always included.
     """
     if not cache_dir.exists():
         logger.warning("Cache directory does not exist: %s", cache_dir)
@@ -89,27 +82,7 @@ def load_cache_results(
 
     for path in sorted(cache_dir.glob("*.json")):
         fname = path.name
-
-        # ── baseline file ────────────────────────────────────────────────────
-        m = _BASELINE_RE.match(fname)
-        if m:
-            dataset_name = m.group(1)
-            if dataset_filter and dataset_name not in dataset_filter:
-                continue
-            try:
-                with open(path) as f:
-                    data = json.load(f)
-                # Inject dataset so build_summary_df can emit baseline rows.
-                data["dataset"] = dataset_name
-                results.append(data)
-            except Exception as e:
-                logger.warning("Failed to read %s: %s", path, e)
-            continue
-
-        # ── skribe file ─────────────────────────────────────────────────
-        # Skip files that start with "baselines-" (already handled above) and
-        # any aggregation files like metrics_all.json.
-        if fname == "metrics_all.json" or fname.startswith("baselines-"):
+        if fname == "metrics_all.json":
             continue
 
         try:
@@ -119,7 +92,6 @@ def load_cache_results(
             logger.warning("Failed to read %s: %s", path, e)
             continue
 
-        # Skribe files contain dataset / model_id at the top level.
         dataset_name = data.get("dataset")
         model_id = data.get("model_id")
 
@@ -129,14 +101,14 @@ def load_cache_results(
 
         if dataset_filter and dataset_name not in dataset_filter:
             continue
-        if llm_filter and model_id not in llm_filter:
+
+        is_baseline = model_id in BASELINE_MODELS
+        if not is_baseline and llm_filter and model_id not in llm_filter:
             continue
 
         results.append(data)
 
-    logger.info(
-        "Loaded %d cache records from %s", len(results), cache_dir
-    )
+    logger.info("Loaded %d cache records from %s", len(results), cache_dir)
     return results
 
 
@@ -185,7 +157,7 @@ def main(argv=None):
     if not results:
         print(
             f"No cache files found in {cache_dir}.  "
-            "Run run_baselines.py and/or run_skribe.py first."
+            "Run run_openml_fit.py (or run_all_models.sh for the full suite) first."
         )
         return 1
 

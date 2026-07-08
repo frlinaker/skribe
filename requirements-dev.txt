@@ -25,5 +25,4 @@ pre-commit>=3.7
 # Optional dev runtime for parquet/resume tests
 pyarrow>=15.0
 
-xgboost>=2.0.0
 shap>=0.40.0

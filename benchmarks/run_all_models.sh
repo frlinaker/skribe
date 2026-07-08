@@ -10,7 +10,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR/.."
 
-source .venv/bin/activate
+PYTHON=".venv/bin/python"
 
 EXTRA_ARGS="${@}"
 
@@ -53,7 +53,7 @@ run_group() {
         IDX=$((IDX + 1))
         echo ""
         echo "  ── [$GROUP_NAME] Model $IDX/$TOTAL: $MODEL ──"
-        python benchmarks/run_skribe.py --llm "$MODEL" --workers 4 $EXTRA_ARGS || {
+        $PYTHON benchmarks/run_skribe.py --llm "$MODEL" --workers 4 $EXTRA_ARGS || {
             echo "  ✗ [$GROUP_NAME] $MODEL failed — continuing"
         }
     done

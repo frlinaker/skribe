@@ -529,18 +529,33 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                 _pt_x.extend(_phantom_x)
                 _pt_y.extend([_by] * 30)
 
-        adjust_text(
-            _annotation_texts,
-            x=_pt_x,
-            y=_pt_y,
-            ax=ax,
-            expand=(2.0, 2.0),
-            force_text=(1.5, 1.5),
-            force_points=(2.0, 2.0),
-            force_pull=(0.5, 0.5),
-            avoid_self=True,
-            only_move={"text": "xy", "points": "xy"},
-        )
+        # Only let adjust_text move labels that actually overlap another label's
+        # rendered bounding box — everything else keeps its default top-center
+        # position over its dot. adjust_text's force-based physics nudges labels
+        # even without a real collision (mainly via the "explode" pre-step), so
+        # filtering to genuinely crowded pairs first avoids moving isolated
+        # labels (e.g. GPT-4o, Gemini 2.5 Flash Lite) for no reason.
+        fig.canvas.draw()
+        _boxes = [t.get_window_extent(renderer=fig.canvas.get_renderer()) for t in _annotation_texts]
+        _crowded = [
+            txt
+            for i, txt in enumerate(_annotation_texts)
+            if any(_boxes[i].expanded(1.15, 1.6).overlaps(_boxes[j]) for j in range(len(_boxes)) if j != i)
+        ]
+
+        if _crowded:
+            adjust_text(
+                _crowded,
+                x=_pt_x,
+                y=_pt_y,
+                ax=ax,
+                expand=(2.0, 2.0),
+                force_text=(1.5, 1.5),
+                force_points=(2.0, 2.0),
+                force_pull=(0.5, 0.5),
+                avoid_self=True,
+                only_move={"text": "xy", "points": "xy"},
+            )
     ax.set_xlabel("Model release date", fontsize=12)
     ax.set_ylabel(f"Mean accuracy ({n_datasets} datasets)", fontsize=12)
     ax.set_title(

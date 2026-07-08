@@ -54,6 +54,31 @@ LLM synthesizes Python implementations of semantic data operators declared in na
 
 **Key difference:** Synthesizes data transformation operators within a search loop, not a standalone predict function. Requires many LLM calls during search. No world-knowledge-driven context pre-pass.
 
+### Zero-shot LLM decision tree induction
+Knauer et al., "Oh LLM, I'm Asking Thee, Please Give Me a Decision Tree: Zero-Shot Decision Tree Induction and Extrapolation", [arXiv 2409.18594](https://arxiv.org/abs/2409.18594), KDD 2025.
+
+Carrasco et al., "Zero-Shot Decision Tree Construction via Large Language Models", [arXiv 2501.16247](https://arxiv.org/abs/2501.16247), 2025.
+
+Both papers prompt an LLM to construct a complete decision tree from feature descriptions alone — zero-shot, no training labels required. Inference is entirely LLM-free (standard tree traversal). Closely related philosophy to skribe: the LLM builds the model once, then steps out entirely. The Knauer paper adds an "extrapolation" capability where the LLM can extend the tree to unseen feature distributions.
+
+**Key difference:** The artifact is a decision tree (fixed numeric threshold splits), not arbitrary Python code. Cannot encode lookup tables, formula scoring, string matching, or other logic natural to skribe's predict functions. No sklearn BaseEstimator. No multi-pass generation or error-feedback retry.
+
+### DeLTa
+Ye et al., "DeLTa: LLM Meeting Decision Trees on Tabular Data", [arXiv 2505.17918](https://arxiv.org/abs/2505.17918), 2025.
+
+Fits a standard CART decision tree from labeled data, then uses an LLM to post-hoc refine the split rules to reduce intra-node distance (making splits more semantically coherent). Inference runs the refined tree with no LLM call.
+
+**Key difference:** Requires labeled training data to build the initial CART tree (hybrid data-driven + LLM approach, unlike zero-shot methods). The artifact is still a decision tree. The LLM acts as a post-hoc refiner rather than a primary code synthesizer; it cannot inject world knowledge that has no signal in the training rows.
+
+### LLM-based tabular feature engineering (cluster)
+LLM-FE ([arXiv 2503.14434](https://arxiv.org/abs/2503.14434), 2025), FeRG-LLM ([arXiv 2503.23371](https://arxiv.org/abs/2503.23371), 2025), MALMAS ([arXiv 2604.20261](https://arxiv.org/abs/2604.20261), ACL 2026), Human-LLM Collaborative FE ([arXiv 2601.21060](https://arxiv.org/abs/2601.21060), 2026).
+
+A cluster of 2025–2026 papers following the CAAFE/OCTree paradigm: LLM generates Python feature transformation code at fit time (no LLM at inference), but the transformed features are fed into a separate downstream classifier (XGBoost, sklearn). Vary in orchestration: evolutionary loop (LLM-FE), chain-of-thought reasoning (FeRG-LLM), multi-agent (MALMAS), Bayesian optimization (Human-LLM).
+
+**Key difference from skribe:** All generate feature transformations only — the generated code is not the predictor. All require a separate downstream model at inference. Multiple LLM calls per fit. No standalone predict function; no sklearn BaseEstimator.
+
+**Meta-benchmark:** LATTEArena ([arXiv 2606.09004](https://arxiv.org/abs/2606.09004), 2026) taxonomizes 15 LATTE methods across 24 configurations. ELF-Gym ([arXiv 2410.12865](https://arxiv.org/abs/2410.12865), CIKM 2024) evaluates LLM feature generation quality against Kaggle "golden" features, finding LLMs capture ~56% of features semantically but only 13% functionally — an important caveat for LLM-FE approaches.
+
 ---
 
 ## LLM-as-direct-predictor (inference-time LLM — architecturally opposite)
@@ -75,9 +100,16 @@ Transformer pre-trained on synthetic data; uses in-context learning at inference
 
 ## Symbolic regression and program synthesis
 
-- **PySR** — Cranmer, [github.com/MilesCranmer/PySR](https://github.com/MilesCranmer/PySR), 2023. Evolves symbolic mathematical expressions using genetic programming. Outputs sklearn-compatible `PySRRegressor`/`PySRClassifier`. Generates code (sympy expressions exportable to Python/C). No LLM; uses evolutionary search, not world knowledge. Cannot handle named categorical features or semantic domain knowledge.
+- **PySR** — Cranmer, [arXiv 2305.01582](https://arxiv.org/abs/2305.01582), 2023. Evolves symbolic mathematical expressions using genetic programming. Outputs sklearn-compatible `PySRRegressor`/`PySRClassifier`. Generates code (sympy expressions exportable to Python/C). No LLM; uses evolutionary search, not world knowledge. Cannot handle named categorical features or semantic domain knowledge. **Closest structural parallel to skribe**: both produce a human-inspectable artifact (PySR: math expression; skribe: Python function) that is itself the entire predictor, with no black-box runtime at inference. Both are sklearn-compatible. The key divergence is the source of generalization: PySR searches expression space; skribe queries world knowledge encoded in an LLM.
+- **Discovering Symbolic Models from Deep Learning** — Cranmer et al., [arXiv 2006.11287](https://arxiv.org/abs/2006.11287), NeurIPS 2020. Introduced the idea of "symbolic distillation": train a neural network to solve a task, then use SR to distill the learned function into an interpretable symbolic expression. Philosophically close to skribe: both treat the high-capacity model (neural net / LLM) as an intermediate step and distill its learned knowledge into a simpler, inspectable artifact that runs cheaply at inference. The difference is that PySR distillation is equation-form and requires numerical data, while skribe distills into executable Python code using LLM world knowledge without needing observed input-output pairs from the black-box model.
 - **TPOT** — [github.com/EpistasisLab/tpot](https://github.com/EpistasisLab/tpot). AutoML using genetic programming to optimize sklearn pipelines. Selects and chains sklearn primitives; no predict-logic code generation.
 - **LaSR** — Grayeli et al., "Symbolic Regression with a Learned Concept Library", [arXiv 2409.09359](https://arxiv.org/abs/2409.09359), 2024. Combines LLM suggestions with PySR's evolutionary search for symbolic regression. Targets numeric regression formulas, not if/elif classification logic on named categorical features.
+
+---
+
+## Tabular ML context
+
+- **Why tree-based models still outperform deep learning on tabular data** — Grinsztajn et al., [arXiv 2207.08815](https://arxiv.org/abs/2207.08815), NeurIPS 2022. Empirical study showing gradient-boosted trees (XGBoost, LightGBM) consistently outperform deep learning on tabular data with up to ~10k samples, attributed in part to deep nets' invariance to feature permutation and their struggle with irregular decision boundaries. Relevant as context for why a general "throw a neural net at it" approach underperforms on the tabular classification datasets in skribe's benchmark — the same class of datasets where skribe achieves competitive results via world-knowledge-driven code synthesis rather than statistical pattern fitting.
 
 ---
 
@@ -116,6 +148,8 @@ SHAP KernelExplainer over the compiled predict function, with LLM-generated narr
 | FeatLLM | — | ✓ | — | — | — | — | — |
 | CAAFE | — | partial | ✓ (wrapper) | — | — | — | — |
 | Talking Trees | — | ✓ | partial | — | — | — | — |
+| Zero-shot DT (Knauer / Carrasco) | — | ✓ | — | — | — | — | — |
+| DeLTa | — | ✓ | — | — | — | — | — |
 | Scikit-LLM | — | — | ✓ | — | — | — | — |
 | PySR | ✓ | ✓ | ✓ | — | — | — | — |
 | TabPFN | — | ✓ | ✓ | — | — | — | — |
@@ -132,4 +166,8 @@ When writing a paper or extended README, these are the works that should be cite
 - TabPFN ([arXiv 2207.01848](https://arxiv.org/abs/2207.01848)) — the strongest baseline on small tabular datasets; important to benchmark against
 - Talking Trees ([arXiv 2509.21465](https://arxiv.org/abs/2509.21465)) — LLM-at-train-time, inference-free, but tree artifact not Python code
 - Scikit-LLM ([GitHub](https://github.com/iryna-kondr/scikit-llm)) — the most prominent prior sklearn-API LLM wrapper; contrast case for inference cost
-- PySR ([GitHub](https://github.com/MilesCranmer/PySR)) — sklearn-compatible code synthesis via evolution; contrast case for non-LLM program synthesis
+- PySR ([arXiv 2305.01582](https://arxiv.org/abs/2305.01582)) — sklearn-compatible code synthesis via evolution; closest structural parallel (interpretable artifact = the predictor); contrast case for non-LLM program synthesis
+- Cranmer et al. 2020 ([arXiv 2006.11287](https://arxiv.org/abs/2006.11287)) — "symbolic distillation" concept; closest philosophical ancestor to skribe's approach of distilling LLM knowledge into a runnable artifact
+- Grinsztajn et al. 2022 ([arXiv 2207.08815](https://arxiv.org/abs/2207.08815)) — background context on why tabular ML is hard for deep nets; motivates the benchmark datasets skribe is evaluated on
+- Zero-shot DT: Knauer et al. ([arXiv 2409.18594](https://arxiv.org/abs/2409.18594), KDD 2025) and Carrasco et al. ([arXiv 2501.16247](https://arxiv.org/abs/2501.16247)) — closest recent work philosophically (LLM builds complete model, no inference LLM); distinguish on artifact type (tree vs. Python function)
+- DeLTa ([arXiv 2505.17918](https://arxiv.org/abs/2505.17918)) — most recent competitor in inference-free LLM-built model space; hybrid data-trained + LLM-refined tree

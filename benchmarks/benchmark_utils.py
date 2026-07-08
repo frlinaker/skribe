@@ -9,6 +9,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import time
 from datetime import date
 from pathlib import Path
@@ -303,10 +304,13 @@ def _xgb_classifier():
 
 def _tabpfn_classifier():
     try:
-        from tabpfn import TabPFNClassifier
+        from tabpfn_client import TabPFNClassifier, set_access_token
     except ImportError:
         return None
-    return TabPFNClassifier(ignore_pretraining_limits=True)
+    token = os.environ.get("TABPFN_TOKEN")
+    if token:
+        set_access_token(token)
+    return TabPFNClassifier()
 
 
 def build_summary_df(results: list[dict]) -> pd.DataFrame:

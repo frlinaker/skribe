@@ -8,8 +8,7 @@ cd "$SCRIPT_DIR/.."
 
 PYTHON=".venv/bin/python"
 CACHE_DIR="artifacts/benchmark_results/cache"
-LOG_OPENAI="artifacts/benchmark_results/run_openai.log"
-LOG_GOOGLE="artifacts/benchmark_results/run_google.log"
+LOG_LLM="artifacts/benchmark_results/run_llm.log"
 
 count_cache() {
     local pattern="$1"
@@ -17,17 +16,17 @@ count_cache() {
 }
 
 summarise_log() {
-    local log="$1" group="$2"
-    [ -f "$log" ] || { echo "  $group: no log yet"; return; }
+    local log="$1"
+    [ -f "$log" ] || { echo "  llm: no log yet"; return; }
     local done failed current age
     done=$(grep -c "accuracy=" "$log" 2>/dev/null || true)
-    failed=$(grep -c "^  ✗" "$log" 2>/dev/null || true)
-    current=$(grep "── \[$group\]" "$log" 2>/dev/null | tail -1 || true)
+    failed=$(grep -c "FAILED after\|^  ✗" "$log" 2>/dev/null || true)
+    current=$(grep -E "\[.+ × .+\]   →" "$log" 2>/dev/null | tail -1 || true)
     age=$(( $(date +%s) - $(date -r "$log" +%s) ))
     if [ "$age" -gt 300 ]; then
-        echo "  $group: [STALE log — ${age}s old, may be from a previous run]"
+        echo "  llm: [STALE log — ${age}s old, may be from a previous run]"
     else
-        echo "  $group: $done done  $failed failed  |  $current"
+        echo "  llm: $done done  $failed failed  |  $current"
     fi
 }
 
@@ -46,14 +45,11 @@ while true; do
     SKRIBE=$((SKRIBE - LOGREG - XGBOOST - TABPFN))
     echo "  cache files — logreg: $LOGREG/16  xgboost: $XGBOOST/16  tabpfn: $TABPFN/16  skribe: $SKRIBE"
 
-    # LLM log summaries
-    summarise_log "$LOG_OPENAI" "openai"
-    summarise_log "$LOG_GOOGLE" "google"
+    # LLM log summary
+    summarise_log "$LOG_LLM"
 
-    # Last few accuracy results from each log
-    for log in "$LOG_OPENAI" "$LOG_GOOGLE"; do
-        [ -f "$log" ] && grep "accuracy=" "$log" | tail -3 | sed 's/^/    /' || true
-    done
+    # Last few accuracy results from the log
+    [ -f "$LOG_LLM" ] && grep "accuracy=" "$LOG_LLM" | tail -3 | sed 's/^/    /' || true
 
     echo ""
     sleep 30

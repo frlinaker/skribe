@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Orchestrate the full OpenML benchmark:
 #   1. Baselines (logreg, xgboost, tabpfn) — each model loops 16 datasets sequentially
-#   2. Skribe LLM variants — OpenAI and Google groups run in parallel;
-#      within each group, models run sequentially; datasets run in parallel via xargs
+#   2. Skribe LLM variants — every (model, dataset) pair across all providers is
+#      flattened into one queue; --workers workers pull whatever pair is next,
+#      so a slow straggler on one model/provider never idles other workers.
 # Already-cached results are skipped automatically.
 # Pass --no-cache to force re-run everything.
 # Pass --no-collate to skip the final collate step.
-set -euo pipefail
+# Pass --skip-baselines to skip straight to the LLM section.
+set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR/.."
@@ -17,6 +19,7 @@ export PYTHONPATH="$(pwd):${PYTHONPATH:-}"
 NO_CACHE=""
 NO_COLLATE=""
 BASELINES_ONLY=""
+SKIP_BASELINES=""
 DATASET_WORKERS=2   # parallel dataset invocations per LLM model (2 CPUs, 8 GB RAM)
 EXTRA_ARGS=()
 for arg in "$@"; do
@@ -24,6 +27,7 @@ for arg in "$@"; do
         --no-cache)       NO_CACHE="--no-cache" ;;
         --no-collate)     NO_COLLATE="1" ;;
         --baselines-only) BASELINES_ONLY="1" ; NO_COLLATE="1" ;;
+        --skip-baselines) SKIP_BASELINES="1" ;;
         --workers=*)      DATASET_WORKERS="${arg#--workers=}" ;;
         *)                EXTRA_ARGS+=("$arg") ;;
     esac
@@ -32,123 +36,105 @@ done
 LOG_DIR="artifacts/benchmark_results"
 mkdir -p "$LOG_DIR"
 
-# All 16 dataset keys, derived from benchmark_utils
+# All 16 dataset keys, derived from benchmark_utils and sorted smallest-to-largest
+# by row count (all datasets are already locally cached, so this is a fast local
+# read — no network calls). Smallest-first means quick feedback and lets the LLM
+# queue clear its fastest work first.
 DATASETS=($($PYTHON - <<'EOF'
 import sys
 sys.path.insert(0, "benchmarks")
-from benchmark_utils import DEFAULT_DATASETS
-for d in DEFAULT_DATASETS:
-    print(d)
+from benchmark_utils import DEFAULT_DATASETS, load_dataset
+sizes = []
+for name, spec in DEFAULT_DATASETS.items():
+    openml_name, version = spec[0], spec[1]
+    csv_path = spec[2] if len(spec) > 2 else None
+    target_col = spec[3] if len(spec) > 3 else None
+    description = spec[4] if len(spec) > 4 else None
+    X, _, _, _ = load_dataset(
+        openml_name, version, None,
+        csv_path=csv_path, target_col=target_col, description=description,
+        require_description=False,
+    )
+    sizes.append((len(X), name))
+sizes.sort()
+for _, name in sizes:
+    print(name)
 EOF
 ))
 
 # ---------------------------------------------------------------------------
 # Baselines — sequential datasets (fast, no API calls)
 # ---------------------------------------------------------------------------
-echo ""
-echo "════════════════════════════════════════════════════════════════"
-echo "  Running baselines  (${#DATASETS[@]} datasets each)"
-echo "════════════════════════════════════════════════════════════════"
-
-for MODEL in logreg xgboost tabpfn; do
+if [ -z "$SKIP_BASELINES" ]; then
     echo ""
-    echo "  ── baseline: $MODEL ──"
-    for DS in "${DATASETS[@]}"; do
-        $PYTHON benchmarks/run_openml_fit.py \
-            --model "$MODEL" \
-            --dataset "$DS" \
-            $NO_CACHE \
-            "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}" || {
-            echo "  ✗ $MODEL/$DS failed — continuing"
-        }
-    done
-done
+    echo "════════════════════════════════════════════════════════════════"
+    echo "  Running baselines  (${#DATASETS[@]} datasets each)"
+    echo "════════════════════════════════════════════════════════════════"
 
-echo ""
-echo "  Baselines done."
+    for MODEL in logreg xgboost tabpfn; do
+        echo ""
+        echo "  ── baseline: $MODEL ──"
+        for DS in "${DATASETS[@]}"; do
+            $PYTHON benchmarks/run_openml_fit.py \
+                --model "$MODEL" \
+                --dataset "$DS" \
+                $NO_CACHE \
+                "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}" || {
+                echo "  ✗ $MODEL/$DS failed — continuing"
+            }
+        done
+    done
+
+    echo ""
+    echo "  Baselines done."
+else
+    echo ""
+    echo "  Skipping baselines (--skip-baselines)."
+fi
 
 [ -n "$BASELINES_ONLY" ] && exit 0
 
 # ---------------------------------------------------------------------------
-# LLM variants — model IDs grouped by provider
+# LLM variants — all providers share one flat (model × dataset) work queue
 # ---------------------------------------------------------------------------
 
-OPENAI_MODELS=($($PYTHON - <<'EOF'
+LLM_MODELS=($($PYTHON - <<'EOF'
 import sys
 sys.path.insert(0, "benchmarks")
 from benchmark_utils import MODEL_PROGRESSION
 for m in MODEL_PROGRESSION:
-    if m.get("provider") == "openai":
+    if not m["model_id"].endswith("+web"):
         print(m["model_id"])
 EOF
 ))
-
-GOOGLE_MODELS=($($PYTHON - <<'EOF'
-import sys
-sys.path.insert(0, "benchmarks")
-from benchmark_utils import MODEL_PROGRESSION
-for m in MODEL_PROGRESSION:
-    if m.get("provider") == "google":
-        print(m["model_id"])
-EOF
-))
-
-run_llm_group() {
-    local GROUP_NAME="$1"
-    shift
-    local MODELS=("$@")
-    local TOTAL=${#MODELS[@]}
-    local IDX=0
-
-    echo ""
-    echo "════════════════════════════════════════════════════════════════"
-    echo "  Starting LLM group: $GROUP_NAME  ($TOTAL models × ${#DATASETS[@]} datasets)"
-    echo "════════════════════════════════════════════════════════════════"
-
-    for MODEL_ID in "${MODELS[@]}"; do
-        IDX=$((IDX + 1))
-        echo ""
-        echo "  ── [$GROUP_NAME] $IDX/$TOTAL: $MODEL_ID ──"
-
-        # Run datasets in parallel via xargs
-        printf '%s\n' "${DATASETS[@]}" | xargs -P "$DATASET_WORKERS" -I{} \
-            $PYTHON benchmarks/run_openml_fit.py \
-                --model skribe \
-                --llm "$MODEL_ID" \
-                --dataset {} \
-                $NO_CACHE \
-                "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}" || {
-            echo "  ✗ [$GROUP_NAME] $MODEL_ID had failures — continuing"
-        }
-    done
-
-    echo ""
-    echo "  [$GROUP_NAME] group done."
-}
-
-# Clear stale LLM logs before starting fresh runs.
-rm -f "$LOG_DIR/run_openai.log" "$LOG_DIR/run_google.log"
-
-# Run OpenAI and Google groups in parallel; log to separate files.
-run_llm_group "openai" "${OPENAI_MODELS[@]}" 2>&1 | tee "$LOG_DIR/run_openai.log" &
-PID_OPENAI=$!
-
-run_llm_group "google" "${GOOGLE_MODELS[@]}" 2>&1 | tee "$LOG_DIR/run_google.log" &
-PID_GOOGLE=$!
-
-echo ""
-echo "OpenAI group PID: $PID_OPENAI  (log: $LOG_DIR/run_openai.log)"
-echo "Google group PID: $PID_GOOGLE  (log: $LOG_DIR/run_google.log)"
-echo "Waiting for both LLM groups to finish…"
-
-wait $PID_OPENAI && OPENAI_RC=0 || OPENAI_RC=$?
-wait $PID_GOOGLE && GOOGLE_RC=0 || GOOGLE_RC=$?
 
 echo ""
 echo "════════════════════════════════════════════════════════════════"
-echo "  All models done."
-echo "  OpenAI exit code: $OPENAI_RC"
-echo "  Google exit code: $GOOGLE_RC"
+echo "  Starting LLM runs  (${#LLM_MODELS[@]} models × ${#DATASETS[@]} datasets, $DATASET_WORKERS workers)"
+echo "════════════════════════════════════════════════════════════════"
+
+# Flatten the full (dataset × model) cross product into one queue, mixing
+# providers together. Ordered dataset-outer / model-inner over the
+# already-size-sorted DATASETS list: all models for the smallest dataset
+# first, then all models for the next-smallest, etc. A slow straggler on
+# one model/provider can't stall workers that could be making progress
+# elsewhere — every worker just pulls whatever pair is next.
+PAIRS=()
+for DS in "${DATASETS[@]}"; do
+    for MODEL_ID in "${LLM_MODELS[@]}"; do
+        PAIRS+=("$MODEL_ID" "$DS")
+    done
+done
+
+LLM_LOG="$LOG_DIR/run_llm.log"
+printf '%s\n' "${PAIRS[@]}" | xargs -P "$DATASET_WORKERS" -n 2 sh -c '
+    "$0" benchmarks/run_openml_fit.py --model skribe --llm "$1" --dataset "$2" '"$NO_CACHE"' '"${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"'
+' "$PYTHON" 2>&1 | tee "$LLM_LOG"
+LLM_RC=${PIPESTATUS[0]}
+
+echo ""
+echo "════════════════════════════════════════════════════════════════"
+echo "  All models done.  exit code: $LLM_RC  (log: $LLM_LOG)"
 echo "════════════════════════════════════════════════════════════════"
 
 # ---------------------------------------------------------------------------
@@ -160,4 +146,4 @@ if [ -z "$NO_COLLATE" ]; then
     $PYTHON benchmarks/collate.py "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
 fi
 
-[ $OPENAI_RC -eq 0 ] && [ $GOOGLE_RC -eq 0 ]
+[ "$LLM_RC" -eq 0 ]

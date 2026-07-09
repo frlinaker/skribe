@@ -225,6 +225,7 @@ def run_one_skribe(
     skip_cache_read: bool = False,
     skip_context: bool = False,
     reasoning_effort: str | None = None,
+    llm_timeout: float | None = None,
 ) -> dict:
     actual_model_id = base_model_id or (model_id.removesuffix("-web") if web_search else model_id)
     tag = f"[{dataset} × {model_id}]"
@@ -318,7 +319,7 @@ def run_one_skribe(
 
     t0 = time.time()
     try:
-        clf = SkribeClassifier(
+        clf_kwargs = dict(
             model=actual_model_id,
             verbose=False,
             web_search=web_search,
@@ -326,6 +327,9 @@ def run_one_skribe(
             context_prepass=not skip_context,
             reasoning_effort=reasoning_effort,
         )
+        if llm_timeout is not None:
+            clf_kwargs["llm_timeout"] = llm_timeout
+        clf = SkribeClassifier(**clf_kwargs)
 
         _prepass_time = [0.0]
         _codegen_count = [0]
@@ -488,6 +492,14 @@ def main(argv=None):
         "dependent). Included in the cache filename/key when set, so different-effort "
         "runs of the same dataset+model don't collide.",
     )
+    parser.add_argument(
+        "--llm-timeout",
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help="Per-LLM-call timeout for --model skribe (default: SkribeClassifier's own "
+        "default, currently 120s).",
+    )
     args = parser.parse_args(argv)
 
     if args.list_models:
@@ -552,6 +564,7 @@ def main(argv=None):
         skip_cache_read=args.no_cache,
         skip_context=args.skip_context,
         reasoning_effort=args.reasoning_effort,
+        llm_timeout=args.llm_timeout,
     )
     return 0
 

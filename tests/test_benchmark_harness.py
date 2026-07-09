@@ -67,6 +67,39 @@ def test_cached_generated_code_matches_scored_code(monkeypatch, tiny_csv_spec):
     assert result["skribe"]["generated_code"] != raw_code
 
 
+def test_llm_timeout_passed_to_skribe_classifier(monkeypatch, tiny_csv_spec, tmp_path):
+    """run_one_skribe's llm_timeout param must reach SkribeClassifier's
+    constructor -- otherwise --llm-timeout on the CLI is a no-op and reruns
+    of timeout-heavy models (e.g. vertex_ai/gemini-2.5-pro) keep hitting the
+    same default 120s timeout."""
+    captured_kwargs = {}
+    orig_init = SkribeClassifier.__init__
+
+    def spy_init(self, *args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return orig_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(SkribeClassifier, "__init__", spy_init)
+    monkeypatch.setattr(
+        SkribeClassifier,
+        "_call_llm",
+        lambda self, prompt, web_search=False, **kwargs: "def predict(**features): return 0",
+    )
+    monkeypatch.setattr(SkribeClassifier, "_extend_code", lambda self, code, web_search=False: code)
+
+    run_openml_fit.run_one_skribe(
+        dataset="tiny",
+        spec=tiny_csv_spec,
+        model_id="gpt-5.4-mini",
+        max_rows=None,
+        cache_dir=None,
+        skip_context=True,
+        llm_timeout=300,
+    )
+
+    assert captured_kwargs.get("llm_timeout") == 300
+
+
 def test_reasoning_effort_included_in_cache_filename(monkeypatch, tiny_csv_spec, tmp_path):
     """Two runs of the same dataset+model but different reasoning_effort must
     write to different cache files -- otherwise a high-effort run's cached

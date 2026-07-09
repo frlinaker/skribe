@@ -177,11 +177,12 @@ def run_one_baseline(
         y_proba = pipe.predict_proba(X_test) if hasattr(pipe, "predict_proba") else None
         metrics = _rich_metrics(np.array(y_test), y_pred, y_proba, n_classes)
         metrics["fit_time_s"] = round(time.time() - t0, 2)
+        metrics["status"] = "ok"
         result[model] = metrics
         print(f"  {model:<10} {dataset:<20} accuracy={metrics['accuracy']:.3f}", flush=True)
     except Exception as e:
         logger.warning("[%s] %s failed: %s", dataset, model, e)
-        result[model] = {"error": str(e)}
+        result[model] = {"error": str(e), "status": "error"}
 
     if cache_file:
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -221,11 +222,19 @@ def run_one_skribe(
         # etc.) is stored with accuracy=0.0 so it counts against the model in
         # aggregate charts (see plot_progression) instead of silently
         # dropping out of the average — but it must still be retried on the
-        # next run rather than treated as a permanent result.
-        if not (isinstance(cached.get("skribe"), dict) and cached["skribe"].get("error")):
+        # next run rather than treated as a permanent result. Older cache
+        # files predate the explicit "status" field, so fall back to the
+        # presence of "error" for those.
+        cached_skribe = cached.get("skribe")
+        is_error = isinstance(cached_skribe, dict) and (
+            cached_skribe.get("status") == "error"
+            if "status" in cached_skribe
+            else bool(cached_skribe.get("error"))
+        )
+        if not is_error:
             print(f"{tag} cached — skipping", flush=True)
             return cached
-        print(f"{tag} cached result was a failure ({cached['skribe']['error']!r}) — retrying", flush=True)
+        print(f"{tag} cached result was a failure ({cached_skribe['error']!r}) — retrying", flush=True)
 
     openml_name, version = spec[0], spec[1]
     csv_path = spec[2] if len(spec) > 2 else None
@@ -338,6 +347,7 @@ def run_one_skribe(
         result["skribe"]["context_prepass_prompt"] = getattr(clf, "context_prepass_prompt_", None)
         result["skribe"]["context_summary"] = getattr(clf, "context_summary_", None)
         result["skribe"]["fit_log"] = getattr(clf, "fit_log_", [])
+        result["skribe"]["status"] = "ok"
         acc = result["skribe"]["accuracy"]
         print(f"{tag} accuracy={acc:.3f}  fit={fit_elapsed:.1f}s  predict={predict_elapsed:.4f}s  ✓", flush=True)
     except Exception as e:
@@ -345,6 +355,7 @@ def run_one_skribe(
         print(f"{tag} FAILED after {elapsed:.1f}s: {e}", flush=True)
         result["skribe"] = {
             "error": str(e),
+            "status": "error",
             "fit_log": getattr(locals().get("clf"), "fit_log_", []),
         }
 

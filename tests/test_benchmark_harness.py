@@ -65,6 +65,68 @@ def test_cached_generated_code_matches_scored_code(monkeypatch, tiny_csv_spec):
     assert result["skribe"]["generated_code"] != raw_code
 
 
+def test_cached_result_has_explicit_status_on_success(monkeypatch, tiny_csv_spec):
+    """result['skribe']['status'] must be an explicit 'ok'/'error' marker, not
+    something callers have to derive by checking for the absence of an
+    'error' key or an accuracy of 0 -- those checks are already duplicated
+    (and subtly inconsistent) across benchmark_utils.build_summary_df,
+    run_openml_fit's own cache-read retry check, and
+    build_skribe_inspector.py, each re-deriving the same state slightly
+    differently."""
+    monkeypatch.setattr(
+        SkribeClassifier, "_call_llm", lambda self, prompt, web_search=False: "def predict(**features): return 0"
+    )
+    monkeypatch.setattr(SkribeClassifier, "_extend_code", lambda self, code: code)
+
+    result = run_openml_fit.run_one_skribe(
+        dataset="tiny",
+        spec=tiny_csv_spec,
+        model_id="gpt-5.4-mini",
+        max_rows=None,
+        cache_dir=None,
+        skip_context=True,
+    )
+
+    assert result["skribe"]["status"] == "ok"
+
+
+def test_cached_result_has_explicit_status_on_failure(monkeypatch, tiny_csv_spec):
+    """Same explicit marker on the failure path -- status must be 'error'
+    whenever result['skribe']['error'] is set, derived from the same place
+    that sets the error, not left for each downstream reader to infer."""
+    monkeypatch.setattr(
+        SkribeClassifier,
+        "_call_llm",
+        lambda self, prompt, web_search=False: "def predict(**features): raise ValueError('nope')",
+    )
+    monkeypatch.setattr(SkribeClassifier, "_extend_code", lambda self, code: code)
+
+    result = run_openml_fit.run_one_skribe(
+        dataset="tiny",
+        spec=tiny_csv_spec,
+        model_id="gpt-5.4-mini",
+        max_rows=None,
+        cache_dir=None,
+        skip_context=True,
+    )
+
+    assert result["skribe"]["status"] == "error"
+
+
+def test_cached_baseline_result_has_explicit_status(tiny_csv_spec):
+    """Baselines (logreg/xgboost/tabpfn) go through a separate code path
+    (run_one_baseline) than skribe results -- it must carry the same
+    explicit status marker on success."""
+    result = run_openml_fit.run_one_baseline(
+        dataset="tiny",
+        spec=tiny_csv_spec,
+        model="logreg",
+        max_rows=None,
+        cache_dir=None,
+    )
+    assert result["logreg"]["status"] == "ok"
+
+
 def test_cached_result_includes_fit_log(monkeypatch, tiny_csv_spec):
     """result['skribe']['fit_log'] must capture every validation failure/retry
     that happened during fit(), not just the final accuracy -- so a cache

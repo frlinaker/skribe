@@ -261,7 +261,8 @@ def build_summary_df(results: list[dict]) -> pd.DataFrame:
 
         if model_id in BASELINE_MODELS:
             m = r.get(model_id, {})
-            if "error" in m:
+            is_error = m.get("status") == "error" if "status" in m else "error" in m
+            if is_error:
                 continue
             row = {
                 "dataset": dataset,
@@ -299,7 +300,8 @@ def build_summary_df(results: list[dict]) -> pd.DataFrame:
                 "n_cols": r.get("n_cols"),
                 "n_classes": r.get("n_classes"),
             }
-            if "error" in m:
+            is_error = m.get("status") == "error" if "status" in m else "error" in m
+            if is_error:
                 # A run that errored out (timeout, rate-limit, etc.) is
                 # scored as a hard 0.0 rather than silently dropped — a
                 # model that can't even produce a classifier for a dataset

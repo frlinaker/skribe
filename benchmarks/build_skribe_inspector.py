@@ -60,7 +60,8 @@ def load_cache(cache_dir: Path) -> tuple[dict, dict]:
             continue
 
         pl = data.get("skribe", {})
-        if pl.get("error") or pl.get("accuracy") is None:
+        is_error = pl.get("status") == "error" if "status" in pl else bool(pl.get("error"))
+        if is_error or pl.get("accuracy") is None:
             continue
 
         key = (dataset, model_id)

@@ -532,3 +532,73 @@ def test_web_search_responses_api_model(monkeypatch):
     assert len(responses_calls) >= 1
     assert responses_calls[0]["model"] == "gpt-5.5"
     assert {"type": "web_search"} in responses_calls[0]["tools"]
+
+
+def test_web_search_responses_api_records_evidence_in_fit_log(monkeypatch):
+    """Responses API path: web_search_call events and url citations land in fit_log_."""
+    clf = SkribeClassifier(model="gpt-5.5", verbose=False, web_search=True)
+
+    def fake_responses(prompt, model, **kwargs):
+        search_call = MagicMock()
+        search_call.type = "web_search_call"
+
+        msg = MagicMock()
+        msg.type = "message"
+        citation = MagicMock()
+        citation.url = "https://archive.ics.uci.edu/dataset/example"
+        content_part = MagicMock()
+        content_part.type = "output_text"
+        content_part.text = SIMPLE_CODE
+        content_part.annotations = [citation]
+        msg.content = [content_part]
+
+        resp = MagicMock()
+        resp.output = [search_call, msg]
+        return resp
+
+    monkeypatch.setattr("litellm.responses", fake_responses)
+
+    X = pd.DataFrame({"x": [1, 2]})
+    y = pd.Series([0, 1])
+    clf.fit(X, y)
+
+    web_search_entries = [e for e in clf.fit_log_ if e.get("stage") == "web_search"]
+    assert web_search_entries, "expected at least one web_search entry in fit_log_"
+    assert web_search_entries[0]["search_call_count"] == 1
+    assert web_search_entries[0]["citations"] == ["https://archive.ics.uci.edu/dataset/example"]
+
+
+def test_web_search_chat_completions_records_citations_in_fit_log(monkeypatch):
+    """Chat Completions path (e.g. Gemini grounding): citations land in fit_log_."""
+    clf = SkribeClassifier(model="vertex_ai/gemini-3.5-flash", verbose=False, web_search=True)
+
+    def fake_completion(model, messages, **kwargs):
+        resp = MagicMock()
+        resp.choices[0].message.content = SIMPLE_CODE
+        resp.choices[0].finish_reason = "stop"
+        resp.choices[0].message.annotations = [
+            {"url_citation": {"url": "https://en.wikipedia.org/wiki/Example"}}
+        ]
+        return resp
+
+    monkeypatch.setattr("litellm.completion", fake_completion)
+
+    X = pd.DataFrame({"x": [1, 2]})
+    y = pd.Series([0, 1])
+    clf.fit(X, y)
+
+    web_search_entries = [e for e in clf.fit_log_ if e.get("stage") == "web_search"]
+    assert web_search_entries, "expected at least one web_search entry in fit_log_"
+    assert web_search_entries[0]["citations"] == ["https://en.wikipedia.org/wiki/Example"]
+
+
+def test_no_web_search_evidence_logged_when_web_search_disabled(monkeypatch):
+    clf = SkribeClassifier(model="gpt-5.5", verbose=False, web_search=False)
+
+    monkeypatch.setattr(clf, "_call_llm", lambda p, web_search=False: SIMPLE_CODE)
+
+    X = pd.DataFrame({"x": [1, 2]})
+    y = pd.Series([0, 1])
+    clf.fit(X, y)
+
+    assert not [e for e in clf.fit_log_ if e.get("stage") == "web_search"]

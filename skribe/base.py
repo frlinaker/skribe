@@ -271,6 +271,23 @@ class BaseSkribeEstimator(BaseEstimator):
     # Union for external checks (e.g. warnings when model is unsupported).
     _WEB_SEARCH_MODELS = _WEB_SEARCH_RESPONSES_API_MODELS | _WEB_SEARCH_CHAT_COMPLETIONS_MODELS
 
+    def _record_web_search_evidence(
+        self, search_call_count: Optional[int], citations: list
+    ) -> None:
+        """Log whether a web-search-enabled call actually searched anything.
+
+        Without this, ``web_search=True`` is a black box — there was no way to
+        tell whether the model searched at all or what it found. Recorded
+        unconditionally (even when empty) so "requested search but found zero
+        citations" is visible too, not just silently indistinguishable from
+        "never called with web_search=True".
+        """
+        entry: dict = {"stage": "web_search"}
+        if search_call_count is not None:
+            entry["search_call_count"] = search_call_count
+        entry["citations"] = citations
+        self.fit_log_.append(entry)
+
     def _call_llm(self, prompt: str, web_search: bool = False) -> str:
         """Call the language model via litellm, return the response text.
 
@@ -293,11 +310,21 @@ class BaseSkribeEstimator(BaseEstimator):
                 prompt, model, tools=[{"type": "web_search"}], timeout=self.llm_timeout
             )
             content = ""
+            search_call_count = 0
+            citations: list = []
             for item in response.output:
-                if getattr(item, "type", None) == "message":
+                item_type = getattr(item, "type", None)
+                if item_type == "web_search_call":
+                    search_call_count += 1
+                elif item_type == "message":
                     for c in item.content:
                         if getattr(c, "type", None) == "output_text":
                             content += c.text
+                            for ann in getattr(c, "annotations", None) or []:
+                                url = getattr(ann, "url", None)
+                                if url:
+                                    citations.append(url)
+            self._record_web_search_evidence(search_call_count, citations)
             content = content.strip()
             if self.verbose:
                 logger.info("[LLM Response]\n%s", content)
@@ -327,6 +354,13 @@ class BaseSkribeEstimator(BaseEstimator):
             choice = response.choices[0]
             content = str(choice.message.content).strip()
             finish_reason = getattr(choice, "finish_reason", None)
+            if kwargs.get("web_search_options") is not None:
+                citations = [
+                    ann.get("url_citation", {}).get("url")
+                    for ann in getattr(choice.message, "annotations", None) or []
+                    if ann.get("url_citation", {}).get("url")
+                ]
+                self._record_web_search_evidence(None, citations)
             if self.verbose:
                 logger.info("[LLM Response (finish_reason=%s)]\n%s", finish_reason, content)
             if finish_reason == "length":

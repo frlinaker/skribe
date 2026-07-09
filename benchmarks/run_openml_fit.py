@@ -337,12 +337,16 @@ def run_one_skribe(
         result["skribe"]["fit_prompt"] = getattr(clf, "fit_prompt_", None)
         result["skribe"]["context_prepass_prompt"] = getattr(clf, "context_prepass_prompt_", None)
         result["skribe"]["context_summary"] = getattr(clf, "context_summary_", None)
+        result["skribe"]["fit_log"] = getattr(clf, "fit_log_", [])
         acc = result["skribe"]["accuracy"]
         print(f"{tag} accuracy={acc:.3f}  fit={fit_elapsed:.1f}s  predict={predict_elapsed:.4f}s  ✓", flush=True)
     except Exception as e:
         elapsed = time.time() - t0
         print(f"{tag} FAILED after {elapsed:.1f}s: {e}", flush=True)
-        result["skribe"] = {"error": str(e)}
+        result["skribe"] = {
+            "error": str(e),
+            "fit_log": getattr(locals().get("clf"), "fit_log_", []),
+        }
 
     # Cache failures too (accuracy=0.0, see build_summary_df) so aggregate
     # charts penalize a model that can't even produce a classifier for this

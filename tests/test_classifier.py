@@ -156,6 +156,49 @@ def test_fit_feedback_includes_error(monkeypatch):
     assert "kaboom" in prompts[1]
 
 
+def test_fit_records_retry_history_on_success(monkeypatch):
+    """Every validation failure/retry along the way to a successful fit must
+    be recorded on clf.fit_log_, not just logged and discarded -- so a
+    benchmark harness (or any caller) can persist what actually happened
+    during fit() (which errors were hit, how many retries, what feedback
+    the LLM got) instead of only ever seeing the final accuracy number.
+    Regression for the cache audit's fit-time errors being visible only in
+    ephemeral log files, invisible in the cached result JSON."""
+    clf = SkribeClassifier(max_retries=1)
+    monkeypatch.setattr(clf, "_extend_code", lambda code: code)
+    outputs = iter(
+        [
+            "def predict(**features): raise ValueError('kaboom')",
+            "def predict(**features): return 1",
+        ]
+    )
+    monkeypatch.setattr(clf, "_call_llm", lambda prompt, web_search=False: next(outputs))
+    clf.fit(pd.DataFrame({"a": [1]}), pd.Series([1], name="target"))
+
+    assert len(clf.fit_log_) == 1
+    entry = clf.fit_log_[0]
+    assert entry["attempt"] == 1
+    assert "kaboom" in entry["error"]
+
+
+def test_fit_records_retry_history_on_exhaustion(monkeypatch):
+    """Same as above, but when every attempt fails -- the retry history
+    (one entry per failed attempt) must still be attached to the raised
+    exception's estimator state so a caller that catches the exception can
+    still recover what happened, not just the final error string."""
+    clf = SkribeClassifier(max_retries=1)
+    monkeypatch.setattr(clf, "_extend_code", lambda code: code)
+    monkeypatch.setattr(
+        clf, "_call_llm", lambda prompt, web_search=False: "def predict(**features): raise ValueError('nope')"
+    )
+    with pytest.raises(Exception):
+        clf.fit(pd.DataFrame({"a": [1]}), pd.Series([1], name="target"))
+
+    assert len(clf.fit_log_) == 2
+    assert all("nope" in entry["error"] for entry in clf.fit_log_)
+    assert [entry["attempt"] for entry in clf.fit_log_] == [1, 2]
+
+
 def test_fit_feedback_includes_name_suggestion_for_typos(monkeypatch):
     """A NameError from a typo'd variable (e.g. 'ea' instead of the real loop
     variable 'ra') should feed back Python's own "Did you mean: 'ra'?"

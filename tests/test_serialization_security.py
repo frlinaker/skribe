@@ -38,6 +38,7 @@ ALLOWED_STATE_FIELDS = {
     "explanation_",
     "context_summary_",
     "context_prepass_prompt_",
+    "fit_log_",
     "new_feature_names_",  # SkribeFeatureEngineer
 }
 

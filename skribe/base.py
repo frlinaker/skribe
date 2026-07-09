@@ -204,6 +204,7 @@ class BaseSkribeEstimator(BaseEstimator):
         self.explanation_: Optional[Explanation] = None
         self.context_summary_: Optional[str] = None
         self.context_prepass_prompt_: Optional[str] = None
+        self.fit_log_: list = []
 
     # used by GridSearchCV
     def get_params(self, deep=True):
@@ -357,10 +358,12 @@ class BaseSkribeEstimator(BaseEstimator):
             raise _ContextWindowExceeded(str(e), real_max_input_tokens)
         except litellm.RateLimitError as e:
             logger.warning("Rate limit hit — sleeping 60s before re-raising. Error: %s", e)
+            self.fit_log_.append({"stage": "llm_call", "error": f"RateLimitError: {e}"})
             time.sleep(60)
             raise RuntimeError(f"LLM call failed: {e}")
         except Exception as e:
             logger.error("LLM call failed: %s", e)
+            self.fit_log_.append({"stage": "llm_call", "error": str(e)})
             raise RuntimeError(f"LLM call failed: {e}")
 
     def _build_dataset_context(
@@ -706,6 +709,7 @@ class BaseSkribeEstimator(BaseEstimator):
         self.explanation_ = None  # invalidate any cached explanation from a prior fit
         self.context_summary_ = None
         self.context_prepass_prompt_ = None
+        self.fit_log_ = []
 
         if self.max_train_rows is not None and len(data) > self.max_train_rows:
             logger.info(
@@ -776,6 +780,13 @@ class BaseSkribeEstimator(BaseEstimator):
                         "Correcting max_input_tokens for %r to the API-reported "
                         "value %d and retrying.", self.model, e.real_max_input_tokens,
                     )
+                    self.fit_log_.append(
+                        {
+                            "stage": "context_window",
+                            "error": str(e),
+                            "action": f"corrected max_input_tokens to {e.real_max_input_tokens}",
+                        }
+                    )
                     max_input_override = e.real_max_input_tokens
                     continue
                 new_headroom = headroom - _CONTEXT_HEADROOM_STEP
@@ -789,6 +800,13 @@ class BaseSkribeEstimator(BaseEstimator):
                     "%.0f%% and retrying.",
                     headroom * 100, new_headroom * 100,
                 )
+                self.fit_log_.append(
+                    {
+                        "stage": "context_window",
+                        "error": str(e),
+                        "action": f"shrunk headroom {headroom:.0%} -> {new_headroom:.0%}",
+                    }
+                )
                 headroom = new_headroom
             except _OutputTruncated:
                 new_headroom = headroom - _CONTEXT_HEADROOM_STEP
@@ -800,6 +818,12 @@ class BaseSkribeEstimator(BaseEstimator):
                 logger.warning(
                     "Output truncated at headroom=%.0f%% — shrinking to %.0f%% and retrying.",
                     headroom * 100, new_headroom * 100,
+                )
+                self.fit_log_.append(
+                    {
+                        "stage": "output_truncated",
+                        "action": f"shrunk headroom {headroom:.0%} -> {new_headroom:.0%}",
+                    }
                 )
                 headroom = new_headroom
         self.raw_python_code_ = raw_code
@@ -846,6 +870,14 @@ class BaseSkribeEstimator(BaseEstimator):
                 error_detail = _format_error_with_suggestion(e)
                 logger.warning(
                     f"[Validation] Attempt {attempt + 1}/{self.max_retries + 1} failed: {error_detail}"
+                )
+                self.fit_log_.append(
+                    {
+                        "stage": "validation",
+                        "attempt": attempt + 1,
+                        "max_attempts": self.max_retries + 1,
+                        "error": error_detail,
+                    }
                 )
                 feedback = (
                     "\n\nThe Python function you previously returned failed validation "

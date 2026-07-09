@@ -25,7 +25,7 @@ def test_classifier_description_in_prompt(monkeypatch):
     clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=False)
     calls = []
 
-    def fake_call_llm(prompt, web_search=False):
+    def fake_call_llm(prompt, web_search=False, **kwargs):
         calls.append({"prompt": prompt, "web_search": web_search})
         return SIMPLE_CODE
 
@@ -46,7 +46,7 @@ def test_regressor_description_in_prompt(monkeypatch):
     reg = SkribeRegressor(model="gpt-5.4-mini", verbose=False, context_prepass=False)
     calls = []
 
-    def fake_call_llm(prompt, web_search=False):
+    def fake_call_llm(prompt, web_search=False, **kwargs):
         calls.append({"prompt": prompt})
         return "def predict(**f): return 1.0"
 
@@ -64,7 +64,7 @@ def test_description_precedes_instructions(monkeypatch):
     """Dataset context block must appear after task instructions but before Data: in fit_prompt_."""
     clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=False)
 
-    def fake_call_llm(prompt, web_search=False):
+    def fake_call_llm(prompt, web_search=False, **kwargs):
         return SIMPLE_CODE
 
     monkeypatch.setattr(clf, "_call_llm", fake_call_llm)
@@ -84,7 +84,7 @@ def test_fit_prompt_includes_web_search_prefix(monkeypatch):
     """fit_prompt_ must reflect the actual prompt sent, including the web search prefix."""
     clf = SkribeClassifier(model="gpt-5.5", verbose=False, web_search=True)
 
-    def fake_call_llm(prompt, web_search=False):
+    def fake_call_llm(prompt, web_search=False, **kwargs):
         return SIMPLE_CODE
 
     monkeypatch.setattr(clf, "_call_llm", fake_call_llm)
@@ -100,7 +100,7 @@ def test_no_description_prompt_unchanged(monkeypatch):
     clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False)
     captured = {}
 
-    def fake_call_llm(prompt, web_search=False):
+    def fake_call_llm(prompt, web_search=False, **kwargs):
         captured["prompt"] = prompt
         return SIMPLE_CODE
 
@@ -131,7 +131,7 @@ def test_context_prepass_caps_high_cardinality_column_preview(monkeypatch):
     clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
     calls = []
 
-    def fake_call_llm(prompt, web_search=False):
+    def fake_call_llm(prompt, web_search=False, **kwargs):
         calls.append(prompt)
         if len(calls) == 1:
             return "This is a clean summary."  # pre-pass response
@@ -157,7 +157,7 @@ def test_context_prepass_fires_before_fit(monkeypatch):
     clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
     calls = []
 
-    def fake_call_llm(prompt, web_search=False):
+    def fake_call_llm(prompt, web_search=False, **kwargs):
         calls.append(prompt)
         if len(calls) == 1:
             return "This is a clean summary."  # pre-pass response
@@ -183,7 +183,7 @@ def test_context_prepass_summary_appears_in_fit_prompt(monkeypatch):
     SUMMARY = "CLEAN SUMMARY: predicts income class."
     call_count = [0]
 
-    def fake_call_llm(prompt, web_search=False):
+    def fake_call_llm(prompt, web_search=False, **kwargs):
         call_count[0] += 1
         if call_count[0] == 1:
             return SUMMARY  # pre-pass
@@ -205,7 +205,7 @@ def test_context_prepass_disabled_uses_raw_description(monkeypatch):
     the prompt and context_summary_ stays None."""
     clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=False)
 
-    def fake_call_llm(prompt, web_search=False):
+    def fake_call_llm(prompt, web_search=False, **kwargs):
         return SIMPLE_CODE
 
     monkeypatch.setattr(clf, "_call_llm", fake_call_llm)
@@ -223,7 +223,7 @@ def test_context_prepass_no_description_skipped(monkeypatch):
     clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
     calls = []
 
-    def fake_call_llm(prompt, web_search=False):
+    def fake_call_llm(prompt, web_search=False, **kwargs):
         calls.append(prompt)
         return SIMPLE_CODE
 
@@ -243,7 +243,7 @@ def test_context_prepass_web_search_forwarded(monkeypatch):
     clf = SkribeClassifier(model="gpt-5.5", verbose=False, web_search=True, context_prepass=True)
     prepass_web_search = []
 
-    def fake_call_llm(prompt, web_search=False):
+    def fake_call_llm(prompt, web_search=False, **kwargs):
         if "preparing a structured dataset summary" in prompt:
             prepass_web_search.append(web_search)
         return SIMPLE_CODE
@@ -279,7 +279,7 @@ def test_context_prepass_states_true_label_mapping(monkeypatch):
     clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
     calls = []
 
-    def fake_call_llm(prompt, web_search=False):
+    def fake_call_llm(prompt, web_search=False, **kwargs):
         calls.append(prompt)
         if len(calls) == 1:
             return "This is a clean summary."  # pre-pass response
@@ -324,7 +324,7 @@ def test_fit_prompt_states_label_mapping_even_if_prepass_omits_it(monkeypatch):
     clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
     calls = []
 
-    def fake_call_llm(prompt, web_search=False):
+    def fake_call_llm(prompt, web_search=False, **kwargs):
         calls.append(prompt)
         if len(calls) == 1:
             # Pre-pass summary lists the labels but NOT the code mapping —
@@ -382,7 +382,7 @@ def test_context_prepass_fallback_on_llm_failure(monkeypatch):
     clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
     call_count = [0]
 
-    def fake_call_llm(prompt, web_search=False):
+    def fake_call_llm(prompt, web_search=False, **kwargs):
         call_count[0] += 1
         if call_count[0] == 1:
             raise RuntimeError("network error")
@@ -429,7 +429,7 @@ def test_web_search_false_by_default(monkeypatch):
     clf = SkribeClassifier(model="gpt-5.5", verbose=False)
     captured = []
 
-    def fake_call_llm(prompt, web_search=False):
+    def fake_call_llm(prompt, web_search=False, **kwargs):
         captured.append(web_search)
         return SIMPLE_CODE
 
@@ -446,7 +446,7 @@ def test_web_search_prompt_prefix(monkeypatch):
     clf = SkribeClassifier(model="gpt-5.5", verbose=False, web_search=True)
     captured = {}
 
-    def fake_call_llm(prompt, web_search=False):
+    def fake_call_llm(prompt, web_search=False, **kwargs):
         if not captured:
             captured["prompt"] = prompt
         return SIMPLE_CODE
@@ -458,6 +458,30 @@ def test_web_search_prompt_prefix(monkeypatch):
     clf.fit(X, y)
 
     assert "search the web" in captured["prompt"].lower()
+
+
+def test_web_search_prompt_states_precedence_over_stated_mapping(monkeypatch):
+    """The web-search instruction must tell the model the explicit code->label
+    mapping stated in the prompt always wins over anything it finds/recalls
+    while searching -- otherwise a search-reinforced wrong guess can override
+    a correct, already-stated mapping (the same failure mode the removed
+    anti-fabrication guard used to target, but scoped to search specifically)."""
+    clf = SkribeClassifier(model="gpt-5.5", verbose=False, web_search=True)
+    captured = {}
+
+    def fake_call_llm(prompt, web_search=False, **kwargs):
+        if not captured:
+            captured["prompt"] = prompt
+        return SIMPLE_CODE
+
+    monkeypatch.setattr(clf, "_call_llm", fake_call_llm)
+
+    X = pd.DataFrame({"x": [1, 2]})
+    y = pd.Series([0, 1])
+    clf.fit(X, y)
+
+    prompt_lower = captured["prompt"].lower()
+    assert "always win" in prompt_lower or "never" in prompt_lower
 
 
 def test_web_search_unsupported_model_warns(monkeypatch, caplog):
@@ -535,6 +559,41 @@ def test_web_search_responses_api_model(monkeypatch):
     assert len(responses_calls) >= 1
     assert responses_calls[0]["model"] == "gpt-5.5"
     assert {"type": "web_search"} in responses_calls[0]["tools"]
+
+
+def test_context_prepass_requests_high_search_context_size(monkeypatch):
+    """The context pre-pass call (most likely to benefit from finding real
+    dataset documentation) should ask for the Responses API's highest
+    search_context_size tier -- code-gen/extend calls don't need this."""
+    clf = SkribeClassifier(model="gpt-5.5", verbose=False, web_search=True, context_prepass=True)
+
+    responses_calls = []
+
+    def fake_responses(prompt, model, **kwargs):
+        responses_calls.append(kwargs.get("tools"))
+        msg = MagicMock()
+        msg.type = "message"
+        content_part = MagicMock()
+        content_part.type = "output_text"
+        content_part.text = SIMPLE_CODE
+        content_part.annotations = []
+        msg.content = [content_part]
+        resp = MagicMock()
+        resp.output = [msg]
+        return resp
+
+    monkeypatch.setattr("litellm.responses", fake_responses)
+
+    X = pd.DataFrame({"x": [1, 2]})
+    y = pd.Series([0, 1])
+    clf.fit(X, y, dataset_description="Some dataset about widgets.")
+
+    # First Responses call is the context pre-pass.
+    prepass_tools = responses_calls[0]
+    assert prepass_tools[0]["search_context_size"] == "high"
+
+    # A later call (code-gen) should NOT carry the pre-pass-specific config.
+    assert not any(tools[0].get("search_context_size") for tools in responses_calls[1:] if tools)
 
 
 def test_web_search_responses_api_records_evidence_in_fit_log(monkeypatch):

@@ -205,8 +205,13 @@ def _cache_key(
     max_rows: int | None,
     fe_model: str | None = None,
     web_search: bool = False,
+    reasoning_effort: str | None = None,
 ) -> str:
     raw = f"{CACHE_SCHEMA}|{dataset}|{model_id}|{max_rows}|fe={fe_model or ''}|ws={web_search}"
+    # Only mixed in when explicitly set, so pre-existing cache files (hashed
+    # before reasoning_effort existed) keep resolving to the same key.
+    if reasoning_effort:
+        raw += f"|re={reasoning_effort}"
     return hashlib.sha1(raw.encode()).hexdigest()[:16]
 
 

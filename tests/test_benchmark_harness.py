@@ -67,6 +67,78 @@ def test_cached_generated_code_matches_scored_code(monkeypatch, tiny_csv_spec):
     assert result["skribe"]["generated_code"] != raw_code
 
 
+def test_reasoning_effort_included_in_cache_filename(monkeypatch, tiny_csv_spec, tmp_path):
+    """Two runs of the same dataset+model but different reasoning_effort must
+    write to different cache files -- otherwise a high-effort run's cached
+    result silently overwrites (or is skipped in favor of) a default-effort
+    run's, even though they're not comparable results."""
+    monkeypatch.setattr(
+        SkribeClassifier,
+        "_call_llm",
+        lambda self, prompt, web_search=False, **kwargs: "def predict(**features): return 0",
+    )
+    monkeypatch.setattr(SkribeClassifier, "_extend_code", lambda self, code, web_search=False: code)
+
+    cache_dir = tmp_path / "cache"
+
+    run_openml_fit.run_one_skribe(
+        dataset="tiny",
+        spec=tiny_csv_spec,
+        model_id="gpt-5.4-mini",
+        max_rows=None,
+        cache_dir=cache_dir,
+        skip_context=True,
+        reasoning_effort=None,
+    )
+    run_openml_fit.run_one_skribe(
+        dataset="tiny",
+        spec=tiny_csv_spec,
+        model_id="gpt-5.4-mini",
+        max_rows=None,
+        cache_dir=cache_dir,
+        skip_context=True,
+        reasoning_effort="high",
+    )
+
+    cache_files = sorted(p.name for p in cache_dir.glob("tiny-gpt-5.4-mini*.json"))
+    assert len(cache_files) == 2, f"expected 2 distinct cache files, got {cache_files}"
+    assert any("effort_high" in name for name in cache_files)
+    assert any("effort_high" not in name for name in cache_files)
+
+
+def test_reasoning_effort_omitted_keeps_existing_cache_filename(
+    monkeypatch, tiny_csv_spec, tmp_path
+):
+    """A run with no reasoning_effort must resolve to the exact same cache
+    filename it always has -- pre-existing cache files (hashed before
+    reasoning_effort existed) must not be orphaned by this change."""
+    monkeypatch.setattr(
+        SkribeClassifier,
+        "_call_llm",
+        lambda self, prompt, web_search=False, **kwargs: "def predict(**features): return 0",
+    )
+    monkeypatch.setattr(SkribeClassifier, "_extend_code", lambda self, code, web_search=False: code)
+
+    cache_dir = tmp_path / "cache"
+    result = run_openml_fit.run_one_skribe(
+        dataset="tiny",
+        spec=tiny_csv_spec,
+        model_id="gpt-5.4-mini",
+        max_rows=None,
+        cache_dir=cache_dir,
+        skip_context=True,
+    )
+    assert "error" not in result["skribe"], result["skribe"].get("error")
+
+    from benchmark_utils import _cache_key
+
+    expected_name = (
+        f"tiny-gpt-5.4-mini-"
+        f"{_cache_key('tiny', 'gpt-5.4-mini', None, fe_model=None, web_search=False)}.json"
+    )
+    assert (cache_dir / expected_name).exists()
+
+
 def test_cached_result_has_explicit_status_on_success(monkeypatch, tiny_csv_spec):
     """result['skribe']['status'] must be an explicit 'ok'/'error' marker, not
     something callers have to derive by checking for the absence of an

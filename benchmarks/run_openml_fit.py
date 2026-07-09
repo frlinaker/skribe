@@ -224,13 +224,21 @@ def run_one_skribe(
     fe_model: str | None = None,
     skip_cache_read: bool = False,
     skip_context: bool = False,
+    reasoning_effort: str | None = None,
 ) -> dict:
     actual_model_id = base_model_id or (model_id.removesuffix("-web") if web_search else model_id)
     tag = f"[{dataset} × {model_id}]"
     safe_model_id = model_id.replace("/", "-")
+    # The effort suffix is only added to the filename when explicitly set, so
+    # existing cache files (which predate reasoning_effort) keep their names
+    # and a plain default-effort run still resolves to the same file.
+    effort_suffix = f"-effort_{reasoning_effort}" if reasoning_effort else ""
     cache_file = (
         cache_dir
-        / f"{dataset}-{safe_model_id}-{_cache_key(dataset, model_id, max_rows, fe_model=fe_model, web_search=web_search)}.json"
+        / (
+            f"{dataset}-{safe_model_id}{effort_suffix}-"
+            f"{_cache_key(dataset, model_id, max_rows, fe_model=fe_model, web_search=web_search, reasoning_effort=reasoning_effort)}.json"
+        )
         if cache_dir
         else None
     )
@@ -286,6 +294,8 @@ def run_one_skribe(
         "n_classes": n_classes,
         "class_map": class_map,
     }
+    if reasoning_effort:
+        result["reasoning_effort"] = reasoning_effort
 
     from skribe import AdaptiveSkribeEngineer, SkribeClassifier
 
@@ -314,13 +324,14 @@ def run_one_skribe(
             web_search=web_search,
             vertex_location=vertex_region or None,
             context_prepass=not skip_context,
+            reasoning_effort=reasoning_effort,
         )
 
         _prepass_time = [0.0]
         _codegen_count = [0]
         _orig_call_llm = clf._call_llm
 
-        def _instrumented_call_llm(prompt: str, web_search: bool = False) -> str:
+        def _instrumented_call_llm(prompt: str, web_search: bool = False, **kwargs) -> str:
             is_prepass = "preparing a structured dataset summary" in prompt
             is_extend = "extend any such mappings" in prompt
             if is_prepass:
@@ -337,7 +348,7 @@ def run_one_skribe(
             ws_note = " [+web]" if web_search else ""
             print(f"{tag}   → {step}{ws_note}…", flush=True)
             t_llm = time.time()
-            result_text = _orig_call_llm(prompt, web_search=web_search)
+            result_text = _orig_call_llm(prompt, web_search=web_search, **kwargs)
             dt = time.time() - t_llm
             if is_prepass:
                 _prepass_time[0] += dt
@@ -469,6 +480,14 @@ def main(argv=None):
         metavar="MODEL_ID",
         help="LLM for AdaptiveSkribeEngineer applied before fitting --model (logreg/xgboost/skribe).",
     )
+    parser.add_argument(
+        "--reasoning-effort",
+        default=None,
+        metavar="EFFORT",
+        help="Reasoning effort for --model skribe (e.g. low/medium/high/xhigh, provider-"
+        "dependent). Included in the cache filename/key when set, so different-effort "
+        "runs of the same dataset+model don't collide.",
+    )
     args = parser.parse_args(argv)
 
     if args.list_models:
@@ -532,6 +551,7 @@ def main(argv=None):
         fe_model=args.fe_model,
         skip_cache_read=args.no_cache,
         skip_context=args.skip_context,
+        reasoning_effort=args.reasoning_effort,
     )
     return 0
 

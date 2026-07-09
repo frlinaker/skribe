@@ -296,6 +296,7 @@ class BaseSkribeEstimator(BaseEstimator):
         prompt: str,
         web_search: bool = False,
         reasoning_effort: Optional[str] = None,
+        web_search_config: Optional[dict] = None,
     ) -> str:
         """Call the language model via litellm, return the response text.
 
@@ -307,6 +308,11 @@ class BaseSkribeEstimator(BaseEstimator):
         dependent) defaults to ``self.reasoning_effort`` when not overridden by
         the caller — passed through to litellm uniformly; unsupported models
         simply ignore it (litellm no-ops rather than erroring).
+
+        ``web_search_config`` merges extra keys into the Responses API's
+        ``web_search`` tool dict (e.g. ``search_context_size``, ``filters``)
+        for the OpenAI-only Responses API path — Gemini's grounding tool has
+        no equivalent knobs, so this is a no-op there.
         """
         import litellm
 
@@ -325,10 +331,11 @@ class BaseSkribeEstimator(BaseEstimator):
             responses_kwargs: dict = {}
             if reasoning_effort is not None:
                 responses_kwargs["reasoning_effort"] = reasoning_effort
+            web_search_tool = {"type": "web_search", **(web_search_config or {})}
             response = litellm.responses(
                 prompt,
                 model,
-                tools=[{"type": "web_search"}],
+                tools=[web_search_tool],
                 timeout=self.llm_timeout,
                 **responses_kwargs,
             )
@@ -508,7 +515,16 @@ class BaseSkribeEstimator(BaseEstimator):
         self.context_prepass_prompt_ = prompt
         logger.info("[Context pre-pass] Calling LLM to summarize dataset context...")
         try:
-            result = self._call_llm(prompt, web_search=self.web_search)
+            # This call benefits most from a thorough search (finding a
+            # dataset's real documentation/schema) more than the code-gen or
+            # extend calls do, which mostly need a quick fact lookup -- so it
+            # asks for the OpenAI Responses API's highest search-context tier.
+            # No equivalent knob exists for Gemini's grounding tool.
+            result = self._call_llm(
+                prompt,
+                web_search=self.web_search,
+                web_search_config={"search_context_size": "high"},
+            )
             result = result.strip()
             logger.info("[Context pre-pass] Result:\n%s", result)
             return result
@@ -619,7 +635,12 @@ class BaseSkribeEstimator(BaseEstimator):
         if self.web_search:
             prompt = (
                 "You may search the web to look up information about these features "
-                "and their real-world relationships before writing the predict function.\n\n"
+                "and their real-world relationships before writing the predict function — "
+                "e.g. the dataset's own documentation or schema (UCI, Kaggle, OpenML), or "
+                "an authoritative reference for what a feature's codes/categories mean. "
+                "If search results conflict with an explicit code-to-label mapping already "
+                "stated in this prompt, the mapping stated here always wins — never let a "
+                "recalled or searched schema override it.\n\n"
             ) + prompt
 
         return prompt

@@ -190,6 +190,40 @@ def test_fit_feedback_includes_name_suggestion_for_typos(monkeypatch):
     assert "Did you mean" in prompts[1] and "ra" in prompts[1]
 
 
+def test_fit_catches_typo_in_untriggered_branch(monkeypatch):
+    """A typo'd name inside a branch that no validation row happens to take
+    must still be caught at fit time -- regression for row-execution-only
+    validation being "hit-and-miss": _validate_predict_fn only calls
+    predict_fn on the rows it has, so a NameError inside an untaken if/elif
+    branch silently passes validation today and only surfaces later as a
+    safe_predict fallback in production. A static AST check for references
+    to names that are never bound anywhere in the function catches this
+    regardless of which branch the validation rows exercise."""
+    clf = SkribeClassifier(max_retries=1)
+    monkeypatch.setattr(clf, "_extend_code", lambda code: code)
+    prompts = []
+    outputs = iter(
+        [
+            "def predict(**features):\n"
+            "    ra = features.get('a')\n"
+            "    if ra > 100:\n"  # validation row has a=1, never enters this branch
+            "        return 1 if ea > 0 else 0\n"  # typo: 'ea' should be 'ra'
+            "    return 0\n",
+            "def predict(**features): return 1",
+        ]
+    )
+
+    def fake_llm(prompt, web_search=False):
+        prompts.append(prompt)
+        return next(outputs)
+
+    monkeypatch.setattr(clf, "_call_llm", fake_llm)
+    clf.fit(pd.DataFrame({"a": [1]}), pd.Series([1], name="target"))
+    assert len(prompts) == 2
+    assert "ea" in prompts[1]
+    assert "Did you mean" in prompts[1] and "ra" in prompts[1]
+
+
 def test_fit_raises_after_exhausting_retries(monkeypatch):
     """When every attempt fails validation, the last error is surfaced."""
     clf = SkribeClassifier(max_retries=1)

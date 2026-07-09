@@ -1,3 +1,6 @@
+import ast
+import builtins
+import difflib
 import logging
 import os
 import re
@@ -74,6 +77,72 @@ def _format_error_with_suggestion(e: Exception) -> str:
     full = "".join(traceback.format_exception(type(e), e, e.__traceback__))
     lines = full.strip().splitlines()
     return lines[-1] if lines else str(e)
+
+
+def _check_unresolved_names(code: str) -> None:
+    """Statically flag references to names that are never bound anywhere in
+    the generated ``predict``/``transform`` function, e.g. a typo'd variable
+    used only inside a branch that a validation row never happens to take.
+
+    ``_validate_predict_fn`` only exercises the code paths its sample rows
+    reach, so a NameError inside an untaken if/elif branch would otherwise
+    pass fit-time validation and only surface later as a silent
+    ``safe_predict``/``safe_regress`` fallback in production. This walks the
+    AST instead of executing it, so it catches the typo regardless of which
+    branch the sample rows happen to exercise.
+
+    Mirrors the audit's ``check_signature_mismatch`` heuristic: nested
+    ``def``/lambda params, comprehension/for-loop targets, ``with ... as``,
+    ``except ... as``, and walrus targets all count as bound names, so
+    legitimate nested helper functions don't false-positive.
+    """
+    tree = ast.parse(code)
+    functions = [
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.FunctionDef) and node.name in ("predict", "transform")
+    ]
+    for func in functions:
+        if func.args.kwarg is None and not func.args.args:
+            continue
+        declared = {a.arg for a in func.args.args}
+        bound = set()
+        for node in ast.walk(func):
+            if isinstance(node, ast.Assign):
+                for t in node.targets:
+                    if isinstance(t, ast.Name):
+                        bound.add(t.id)
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                bound.add(node.name)
+                bound |= {a.arg for a in node.args.args}
+                if node.args.vararg:
+                    bound.add(node.args.vararg.arg)
+                if node.args.kwarg:
+                    bound.add(node.args.kwarg.arg)
+            elif isinstance(node, ast.Lambda):
+                bound |= {a.arg for a in node.args.args}
+            elif isinstance(node, (ast.For, ast.comprehension)):
+                for n in ast.walk(node.target):
+                    if isinstance(n, ast.Name):
+                        bound.add(n.id)
+            elif isinstance(node, ast.withitem) and node.optional_vars:
+                for n in ast.walk(node.optional_vars):
+                    if isinstance(n, ast.Name):
+                        bound.add(n.id)
+            elif isinstance(node, ast.ExceptHandler) and node.name:
+                bound.add(node.name)
+            elif isinstance(node, ast.NamedExpr) and isinstance(node.target, ast.Name):
+                bound.add(node.target.id)
+        loaded = {
+            n.id for n in ast.walk(func) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)
+        }
+        known = declared | bound | set(dir(builtins)) | {"self"}
+        unknown = sorted(n for n in loaded - known if not n.startswith("__"))
+        if unknown:
+            name = unknown[0]
+            candidates = difflib.get_close_matches(name, known, n=1)
+            suggestion = f" Did you mean: '{candidates[0]}'?" if candidates else ""
+            raise NameError(f"name '{name}' is not defined.{suggestion}")
 
 
 def resolve_model(model: Optional[str]) -> str:
@@ -744,6 +813,7 @@ class BaseSkribeEstimator(BaseEstimator):
                     raise ValueError("No code to exec from LLM output.")
                 raw_code = code
                 extended_code = self._extend_code(code)
+                _check_unresolved_names(extended_code)
                 fn = make_predict_fn(extended_code)
                 self._validate_predict_fn(fn, validation_rows, validation_labels)
             except Exception as e:

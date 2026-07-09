@@ -2,7 +2,8 @@ import warnings
 
 import pandas as pd
 import pytest
-from skribe.base import BaseSkribeEstimator, _CONTEXT_HEADROOM
+
+from skribe.base import BaseSkribeEstimator
 from skribe.utils import sanitize_dataset_description
 
 
@@ -96,9 +97,7 @@ def test_truncate_no_op_when_fits(monkeypatch):
     import litellm
 
     est = BaseSkribeEstimator(model="gpt-4o", verbose=False, max_train_rows=None)
-    monkeypatch.setattr(
-        litellm, "get_model_info", lambda m: {"max_input_tokens": 128_000}
-    )
+    monkeypatch.setattr(litellm, "get_model_info", lambda m: {"max_input_tokens": 128_000})
     monkeypatch.setattr(litellm, "token_counter", lambda **kw: 100)
 
     df = pd.DataFrame({"x": range(50)})
@@ -111,9 +110,7 @@ def test_truncate_warns_and_reduces(monkeypatch):
     import litellm
 
     est = BaseSkribeEstimator(model="gpt-4o", verbose=False, max_train_rows=None)
-    monkeypatch.setattr(
-        litellm, "get_model_info", lambda m: {"max_input_tokens": 1000}
-    )
+    monkeypatch.setattr(litellm, "get_model_info", lambda m: {"max_input_tokens": 1000})
     # First call (full df) exceeds budget (>920 = 1000*0.92); ≤25 rows fits.
     call_count = [0]
 
@@ -140,7 +137,9 @@ def test_truncate_skips_check_when_model_unknown(monkeypatch):
     import litellm
 
     est = BaseSkribeEstimator(model="unknown-model", verbose=False, max_train_rows=None)
-    monkeypatch.setattr(litellm, "get_model_info", lambda m: (_ for _ in ()).throw(Exception("unknown")))
+    monkeypatch.setattr(
+        litellm, "get_model_info", lambda m: (_ for _ in ()).throw(Exception("unknown"))
+    )
 
     df = pd.DataFrame({"x": range(20)})
     result = est._truncate_to_context_window(df, "{data}")
@@ -150,6 +149,7 @@ def test_truncate_skips_check_when_model_unknown(monkeypatch):
 def test_max_train_rows_none_default():
     """max_train_rows defaults to None (no hard cap)."""
     from skribe import SkribeClassifier, SkribeRegressor
+
     assert SkribeClassifier().max_train_rows is None
     assert SkribeRegressor().max_train_rows is None
 
@@ -157,6 +157,7 @@ def test_max_train_rows_none_default():
 def test_max_train_rows_explicit_still_caps(monkeypatch):
     """When max_train_rows is set, data is still capped before the context check."""
     import litellm
+
     from skribe import SkribeClassifier
 
     clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, max_train_rows=5)

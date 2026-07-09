@@ -215,7 +215,8 @@ CSS = textwrap.dedent("""\
     .no-data { color: #aaa; font-style: italic; font-size: 0.85rem; padding: 20px 0; }
 """)
 
-JS = textwrap.dedent("""\
+JS = (
+    textwrap.dedent("""\
     function esc(s) {
       return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
     }
@@ -461,7 +462,11 @@ JS = textwrap.dedent("""\
     });
 
     renderGroups();
-""").replace("__CONTEXT_START__", CONTEXT_START).replace("__CONTEXT_END__", CONTEXT_END).replace("__DATA_MARKER__", DATA_MARKER)
+""")
+    .replace("__CONTEXT_START__", CONTEXT_START)
+    .replace("__CONTEXT_END__", CONTEXT_END)
+    .replace("__DATA_MARKER__", DATA_MARKER)
+)
 
 
 def build_html(groups: list[dict]) -> str:

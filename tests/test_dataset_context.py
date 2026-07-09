@@ -1,10 +1,8 @@
 """Tests for dataset_description and web_search features."""
 
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import MagicMock
 
-import numpy as np
 import pandas as pd
-import pytest
 
 from skribe import SkribeClassifier, SkribeRegressor
 
@@ -242,9 +240,7 @@ def test_context_prepass_no_description_skipped(monkeypatch):
 
 def test_context_prepass_web_search_forwarded(monkeypatch):
     """When web_search=True, the pre-pass call also gets web_search=True."""
-    clf = SkribeClassifier(
-        model="gpt-5.5", verbose=False, web_search=True, context_prepass=True
-    )
+    clf = SkribeClassifier(model="gpt-5.5", verbose=False, web_search=True, context_prepass=True)
     prepass_web_search = []
 
     def fake_call_llm(prompt, web_search=False):
@@ -376,7 +372,9 @@ def test_fit_prompt_mapping_line_unambiguous_when_labels_look_numeric(monkeypatc
     # returns the code, not the label.
     assert '0="1"' in fit_prompt
     assert '1="2"' in fit_prompt
-    assert "never return the original label" in fit_prompt or "never the original label" in fit_prompt
+    assert (
+        "never return the original label" in fit_prompt or "never the original label" in fit_prompt
+    )
 
 
 def test_context_prepass_fallback_on_llm_failure(monkeypatch):
@@ -487,9 +485,7 @@ def test_web_search_unsupported_model_warns(monkeypatch, caplog):
 
 def test_web_search_supported_model_passes_options(monkeypatch):
     """Chat Completions path: gpt-4o-search-preview gets web_search_options."""
-    clf = SkribeClassifier(
-        model="gpt-4o-search-preview", verbose=False, web_search=True
-    )
+    clf = SkribeClassifier(model="gpt-4o-search-preview", verbose=False, web_search=True)
 
     calls = []
 

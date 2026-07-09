@@ -1,9 +1,10 @@
-import pytest
-import pandas as pd
-import numpy as np
-import joblib
 import os
 import tempfile
+
+import joblib
+import numpy as np
+import pandas as pd
+import pytest
 
 from skribe.classifier import SkribeClassifier
 from skribe.utils import *
@@ -124,9 +125,7 @@ def test_fit_retries_then_succeeds(monkeypatch):
             "def predict(**features): return 0",  # valid
         ]
     )
-    monkeypatch.setattr(
-        clf, "_call_llm", lambda prompt, web_search=False: next(outputs)
-    )
+    monkeypatch.setattr(clf, "_call_llm", lambda prompt, web_search=False: next(outputs))
     X = pd.DataFrame({"a": [1, 2, 3]})
     y = pd.Series([0, 1, 0], name="target")
     clf.fit(X, y)
@@ -189,7 +188,9 @@ def test_fit_records_retry_history_on_exhaustion(monkeypatch):
     clf = SkribeClassifier(max_retries=1)
     monkeypatch.setattr(clf, "_extend_code", lambda code: code)
     monkeypatch.setattr(
-        clf, "_call_llm", lambda prompt, web_search=False: "def predict(**features): raise ValueError('nope')"
+        clf,
+        "_call_llm",
+        lambda prompt, web_search=False: "def predict(**features): raise ValueError('nope')",
     )
     with pytest.raises(Exception):
         clf.fit(pd.DataFrame({"a": [1]}), pd.Series([1], name="target"))
@@ -316,9 +317,7 @@ def test_fit_raises_after_exhausting_retries(monkeypatch):
 def test_setstate_broken_code(monkeypatch):
     """Test __setstate__ with broken python_code_ triggers warning and fallback."""
     clf = SkribeClassifier()
-    bad_state = dict(
-        python_code_="def not_valid_code !@#", predict_fn=None, model="gpt-4o"
-    )
+    bad_state = dict(python_code_="def not_valid_code !@#", predict_fn=None, model="gpt-4o")
     # Should warn but not crash
     with pytest.warns(UserWarning):
         clf.__setstate__(bad_state)
@@ -327,15 +326,14 @@ def test_setstate_broken_code(monkeypatch):
 
 def test_fit_too_many_rows(monkeypatch):
     """Test .fit() samples down if input too large."""
-    import skribe.utils
-    import pandas as pd
     import numpy as np
+    import pandas as pd
+
+    import skribe.utils
     from skribe.classifier import SkribeClassifier
 
     # Patch make_predict_fn at the module level
-    monkeypatch.setattr(
-        skribe.utils, "make_predict_fn", lambda code: lambda **features: 0
-    )
+    monkeypatch.setattr(skribe.utils, "make_predict_fn", lambda code: lambda **features: 0)
     clf = SkribeClassifier(max_train_rows=5)
     # 10 rows will trigger down-sampling
     X = pd.DataFrame({"a": np.arange(10)})
@@ -364,12 +362,11 @@ def test_fit_blank_llm_output(monkeypatch):
 def test_fit_nonstring_llm_output(monkeypatch):
     """Test .fit() with non-string LLM output is handled robustly."""
     import pandas as pd
+
     import skribe.utils
 
     # Patch BEFORE importing SkribeClassifier
-    monkeypatch.setattr(
-        skribe.utils, "make_predict_fn", lambda code: lambda **features: 0
-    )
+    monkeypatch.setattr(skribe.utils, "make_predict_fn", lambda code: lambda **features: 0)
     from skribe.classifier import SkribeClassifier
 
     clf = SkribeClassifier()
@@ -387,9 +384,7 @@ def test_sample_calls_llm_and_parses(monkeypatch):
     # Patch _call_llm to return a simple TSV
     clf.feature_names_ = ["x1"]
     clf.target_name_ = "y"
-    monkeypatch.setattr(
-        clf, "_call_llm", lambda prompt, web_search=False: "a\tb\n1\t2\n3\t4"
-    )
+    monkeypatch.setattr(clf, "_call_llm", lambda prompt, web_search=False: "a\tb\n1\t2\n3\t4")
     df = clf.sample(2)
     assert isinstance(df, pd.DataFrame)
     assert set(df.columns) == {"a", "b"}
@@ -428,9 +423,7 @@ def test_safe_exec_fn_handles_errors_and_coercion():
     def just_return(**features):
         return features["x"]
 
-    assert (
-        safe_exec_fn(just_return, {"x": "3.0"}, output_type=float, default=0.0) == 3.0
-    )
+    assert safe_exec_fn(just_return, {"x": "3.0"}, output_type=float, default=0.0) == 3.0
     assert safe_exec_fn(just_return, {"x": "5"}, output_type=int, default=0) == 5
 
 
@@ -500,9 +493,7 @@ def test_generate_feature_dicts_invalid():
 
 
 def test_prepare_training_data_invalid():
-    with pytest.raises(
-        ValueError, match="X must be a pandas DataFrame or numpy array."
-    ):
+    with pytest.raises(ValueError, match="X must be a pandas DataFrame or numpy array."):
         prepare_training_data("not a table", [1, 2, 3])
 
 
@@ -586,9 +577,7 @@ def test_fit_rejects_positional_arg_missing_feature(monkeypatch):
     and ultimately raise with a clear message naming the missing argument."""
     clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, max_retries=0)
     # Returns a function that only accepts 'age', missing 'income'
-    monkeypatch.setattr(
-        clf, "_call_llm", lambda p, web_search=False: "def predict(age): return 0"
-    )
+    monkeypatch.setattr(clf, "_call_llm", lambda p, web_search=False: "def predict(age): return 0")
     monkeypatch.setattr(clf, "_extend_code", lambda code: code)
 
     with pytest.raises(ValueError, match="missing expected feature arguments"):
@@ -596,7 +585,6 @@ def test_fit_rejects_positional_arg_missing_feature(monkeypatch):
             pd.DataFrame({"age": [25, 40], "income": [30000, 80000]}),
             pd.Series([0, 1]),
         )
-
 
 
 def test_fit_kwargs_signature_passes_validation(monkeypatch):

@@ -15,7 +15,7 @@ from sklearn.base import (
     is_regressor,
 )
 
-from skribe import SkribeClassifier, SkribeRegressor, SkribeFeatureEngineer
+from skribe import SkribeClassifier, SkribeFeatureEngineer, SkribeRegressor
 
 ALL_ESTIMATORS = [SkribeClassifier, SkribeRegressor, SkribeFeatureEngineer]
 

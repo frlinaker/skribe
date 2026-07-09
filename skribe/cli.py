@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+
 from skribe import SkribeClassifier, SkribeRegressor
 
 
@@ -49,6 +50,7 @@ _CHECK_PROMPT = "Reply with the single word OK and nothing else."
 
 def cmd_check(_args: argparse.Namespace) -> int:
     import os
+
     import litellm
 
     litellm.suppress_debug_info = True
@@ -84,9 +86,7 @@ def cmd_fit(args: argparse.Namespace) -> int:
     df = _load_csv(args.file)
 
     if args.target not in df.columns:
-        print(
-            f"error: column '{args.target}' not found in {args.file}", file=sys.stderr
-        )
+        print(f"error: column '{args.target}' not found in {args.file}", file=sys.stderr)
         print(f"  available columns: {', '.join(df.columns)}", file=sys.stderr)
         return 1
 
@@ -100,14 +100,8 @@ def cmd_fit(args: argparse.Namespace) -> int:
 
     task = args.task
     if task == "auto":
-        task = (
-            "regression"
-            if y.dtype in (float, "float64", "float32")
-            else "classification"
-        )
-    print(
-        f"task: {task}  |  model: {args.model}  |  rows: {len(X_train)} train", end=""
-    )
+        task = "regression" if y.dtype in (float, "float64", "float32") else "classification"
+    print(f"task: {task}  |  model: {args.model}  |  rows: {len(X_train)} train", end="")
     if X_test is not None:
         print(f" / {len(X_test)} test", end="")
     print()

@@ -13,9 +13,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "benchmarks"))
 
-from skribe.classifier import SkribeClassifier
-
 import run_openml_fit  # noqa: E402
+
+from skribe.classifier import SkribeClassifier
 
 
 @pytest.fixture
@@ -74,7 +74,9 @@ def test_cached_result_has_explicit_status_on_success(monkeypatch, tiny_csv_spec
     build_skribe_inspector.py, each re-deriving the same state slightly
     differently."""
     monkeypatch.setattr(
-        SkribeClassifier, "_call_llm", lambda self, prompt, web_search=False: "def predict(**features): return 0"
+        SkribeClassifier,
+        "_call_llm",
+        lambda self, prompt, web_search=False: "def predict(**features): return 0",
     )
     monkeypatch.setattr(SkribeClassifier, "_extend_code", lambda self, code: code)
 

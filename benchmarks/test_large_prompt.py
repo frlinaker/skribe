@@ -28,13 +28,15 @@ load_dotenv()
 
 import litellm
 import pandas as pd
-
 from benchmark_utils import DEFAULT_DATASETS, load_dataset
 
 MODELS = [
-    {"label": "OpenAI GPT-4.1",         "model_id": "gpt-4.1"},
-    {"label": "Google Gemini 2.5 Flash", "model_id": "vertex_ai/gemini-2.5-flash",
-     "extra": {"vertex_location": "us-central1"}},
+    {"label": "OpenAI GPT-4.1", "model_id": "gpt-4.1"},
+    {
+        "label": "Google Gemini 2.5 Flash",
+        "model_id": "vertex_ai/gemini-2.5-flash",
+        "extra": {"vertex_location": "us-central1"},
+    },
 ]
 
 PREAMBLE = """\
@@ -107,9 +109,11 @@ def probe_model(label: str, model_id: str, prompt: str, extra: dict | None = Non
         usage = response.usage
 
         print(f"  STATUS : OK  ({elapsed:.1f}s)")
-        print(f"  USAGE  : prompt_tokens={getattr(usage, 'prompt_tokens', '?')}  "
-              f"completion_tokens={getattr(usage, 'completion_tokens', '?')}  "
-              f"total={getattr(usage, 'total_tokens', '?')}")
+        print(
+            f"  USAGE  : prompt_tokens={getattr(usage, 'prompt_tokens', '?')}  "
+            f"completion_tokens={getattr(usage, 'completion_tokens', '?')}  "
+            f"total={getattr(usage, 'total_tokens', '?')}"
+        )
         print(f"  REPLY  : {content[:300].strip()!r}{'...' if len(content) > 300 else ''}")
 
     except litellm.BadRequestError as e:
@@ -136,12 +140,20 @@ def probe_model(label: str, model_id: str, prompt: str, extra: dict | None = Non
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--dataset", default="adult",
-                        choices=list(DEFAULT_DATASETS), help="Dataset to use")
-    parser.add_argument("--rows", default="all",
-                        help="Number of training rows to include (default: all = full dataset)")
-    parser.add_argument("--train-frac", type=float, default=0.75,
-                        help="Fraction used as training split (default: 0.75)")
+    parser.add_argument(
+        "--dataset", default="adult", choices=list(DEFAULT_DATASETS), help="Dataset to use"
+    )
+    parser.add_argument(
+        "--rows",
+        default="all",
+        help="Number of training rows to include (default: all = full dataset)",
+    )
+    parser.add_argument(
+        "--train-frac",
+        type=float,
+        default=0.75,
+        help="Fraction used as training split (default: 0.75)",
+    )
     args = parser.parse_args()
 
     spec = DEFAULT_DATASETS[args.dataset]
@@ -152,9 +164,13 @@ def main():
 
     print(f"Loading dataset: {args.dataset} ...")
     X, y, class_map, _, _ = load_dataset(
-        openml_name, version, max_rows=None,
-        csv_path=csv_path, target_col=target_col,
-        description=description, require_description=False,
+        openml_name,
+        version,
+        max_rows=None,
+        csv_path=csv_path,
+        target_col=target_col,
+        description=description,
+        require_description=False,
     )
 
     # Reconstruct a labelled dataframe (add target back for the CSV)
@@ -170,8 +186,10 @@ def main():
         n = int(args.rows)
         df_train = df_train.iloc[:n].copy()
 
-    print(f"Dataset: {args.dataset}  total_rows={len(df_full):,}  "
-          f"training_rows_in_prompt={len(df_train):,}  cols={X.shape[1]}")
+    print(
+        f"Dataset: {args.dataset}  total_rows={len(df_full):,}  "
+        f"training_rows_in_prompt={len(df_train):,}  cols={X.shape[1]}"
+    )
 
     prompt = build_prompt(df_train)
 

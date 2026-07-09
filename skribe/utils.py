@@ -1,12 +1,10 @@
 import logging
 import re
-
 from io import StringIO
+from typing import Any, Callable, Dict, Type
 
 import numpy as np
 import pandas as pd
-
-from typing import Any, Callable, Dict, Type
 
 logger = logging.getLogger("skribe")
 
@@ -65,9 +63,7 @@ def prepare_training_data(X, y):
     """
     if isinstance(X, pd.DataFrame):
         data = X.copy()
-        target_name = normalize_feature_name(
-            y.name if hasattr(y, "name") and y.name else "target"
-        )
+        target_name = normalize_feature_name(y.name if hasattr(y, "name") and y.name else "target")
         data[target_name] = y.values if hasattr(y, "values") else y
         # Normalize all columns (including target)
         data.columns = [normalize_feature_name(col) for col in data.columns]
@@ -101,9 +97,7 @@ def make_predict_fn(code: str, fn_names=("predict", "transform")):
         fn = local_vars.get(name, None)
         if callable(fn):
             return fn
-    raise ValueError(
-        "No valid function named 'predict' or any callable found in LLM output."
-    )
+    raise ValueError("No valid function named 'predict' or any callable found in LLM output.")
 
 
 def _coerce_numeric_strings(features: Dict[str, Any], output_type: Type) -> Dict[str, Any]:

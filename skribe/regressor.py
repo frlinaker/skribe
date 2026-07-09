@@ -1,7 +1,7 @@
 import logging
+
 import numpy as np
 import pandas as pd
-
 from sklearn.base import RegressorMixin
 from sklearn.metrics import r2_score
 
@@ -11,8 +11,7 @@ from .utils import generate_feature_dicts, safe_regress
 
 logger = logging.getLogger("skribe")
 
-DEFAULT_REGRESSION_PROMPT_TEMPLATE = (
-"""
+DEFAULT_REGRESSION_PROMPT_TEMPLATE = """
 Output a single valid Python function called 'predict' that, given the feature variables (see below), predicts a continuous value (float or int).
 
 Do NOT use any variable not defined below or present in the provided data. If you need external lookups, include them as Python lists or dicts at the top of your output.
@@ -31,9 +30,7 @@ Every string literal MUST be valid, properly terminated Python. If a dictionary 
 
 Only output valid Python code, no markdown or explanations.
 
-"""
-+ DATA_MARKER + "\n{data}\n"
-)
+""" + DATA_MARKER + "\n{data}\n"
 
 
 class SkribeRegressor(RegressorMixin, BaseSkribeEstimator):
@@ -59,9 +56,7 @@ class SkribeRegressor(RegressorMixin, BaseSkribeEstimator):
             llm_timeout=llm_timeout,
         )
 
-    def fit(
-        self, X, y, synthetic_features=None, dataset_description=None
-    ) -> "SkribeRegressor":
+    def fit(self, X, y, synthetic_features=None, dataset_description=None) -> "SkribeRegressor":
         # See SkribeClassifier.fit()'s majority_class_ for the analogous
         # classification fix — the prompt's generic "such as 0.0" fallback
         # wording is often a nonsensical value for real regression targets

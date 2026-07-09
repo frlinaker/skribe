@@ -2,12 +2,11 @@
 
 import numpy as np
 import pandas as pd
-import pytest
 from sklearn.dummy import DummyClassifier, DummyRegressor
 from sklearn.linear_model import LinearRegression, LogisticRegression
 
 from skribe.base import BaseSkribeEstimator
-from skribe.compare import compare_models, explain_comparison, _infer_task
+from skribe.compare import _infer_task, compare_models, explain_comparison
 from skribe.explain import Explanation
 
 
@@ -65,9 +64,7 @@ def test_compare_regression_uses_regression_metrics():
     X = pd.DataFrame({"x": [0, 1, 2, 3, 4, 5]})
     y = pd.Series([0.0, 2.0, 4.0, 6.0, 8.0, 10.0])  # y = 2x
     models = {"linreg": LinearRegression(), "dummy": DummyRegressor()}
-    metrics, preds = compare_models(
-        models, X.iloc[:4], y.iloc[:4], X.iloc[4:], y.iloc[4:]
-    )
+    metrics, preds = compare_models(models, X.iloc[:4], y.iloc[:4], X.iloc[4:], y.iloc[4:])
 
     assert list(metrics.columns) == ["rmse", "r2", "fit_time_sec", "predict_time_sec"]
     # linear regression should recover y = 2x almost exactly
@@ -108,6 +105,7 @@ def test_failing_model_yields_nan_not_crash():
 # explain_comparison tests
 # ---------------------------------------------------------------------------
 
+
 class _FittedSkribe(BaseSkribeEstimator):
     """Pre-fitted skribe stub: always predicts label based on x1 threshold."""
 
@@ -138,11 +136,16 @@ def test_explain_comparison_returns_explanation(monkeypatch):
     prompt_model = _FittedSkribe()
     logreg = LogisticRegression(max_iter=1000).fit(X, y)
 
-    monkeypatch.setattr(prompt_model, "_call_llm", lambda p, **kw: "Model A uses an explicit threshold; Model B uses a linear boundary.")
+    monkeypatch.setattr(
+        prompt_model,
+        "_call_llm",
+        lambda p, **kw: "Model A uses an explicit threshold; Model B uses a linear boundary.",
+    )
 
     result = explain_comparison(
         {"prompt": prompt_model, "logreg": logreg},
-        X, y,
+        X,
+        y,
         task="classification",
         shap_sample=6,
     )
@@ -160,6 +163,7 @@ def test_explain_comparison_includes_generated_code_in_prompt(monkeypatch):
     dummy = DummyClassifier(strategy="most_frequent").fit(X, y)
 
     captured = {}
+
     def fake_llm(p, **kw):
         captured["prompt"] = p
         return "narrative"
@@ -168,7 +172,8 @@ def test_explain_comparison_includes_generated_code_in_prompt(monkeypatch):
 
     explain_comparison(
         {"prompt": prompt_model, "dummy": dummy},
-        X, y,
+        X,
+        y,
         task="classification",
         shap_sample=6,
     )
@@ -193,15 +198,17 @@ def test_explain_comparison_disagreement_rate(monkeypatch):
     always_zero.python_code_ = "def predict(**f): return 0"
     always_zero.predict = lambda X: np.zeros(len(pd.DataFrame(X)), dtype=int)
     monkeypatch.setattr(always_zero, "_call_llm", lambda p, **kw: "same")
-    result = explain_comparison({"a": m1, "b": m2, "stub": always_zero}, X, y,
-                                 task="classification", shap_sample=6)
+    result = explain_comparison(
+        {"a": m1, "b": m2, "stub": always_zero}, X, y, task="classification", shap_sample=6
+    )
     assert result.data["disagreement_rate"] == 0.0
 
     # Prompt model disagrees with dummy on some rows
     prompt_model = _FittedSkribe()
     monkeypatch.setattr(prompt_model, "_call_llm", lambda p, **kw: "diff")
-    result2 = explain_comparison({"prompt": prompt_model, "dummy": m1}, X, y,
-                                  task="classification", shap_sample=6)
+    result2 = explain_comparison(
+        {"prompt": prompt_model, "dummy": m1}, X, y, task="classification", shap_sample=6
+    )
     assert result2.data["disagreement_rate"] > 0.0
 
 
@@ -215,8 +222,9 @@ def test_explain_comparison_feature_importance_keys(monkeypatch):
     stub = _FittedSkribe()
     monkeypatch.setattr(stub, "_call_llm", lambda p, **kw: "ok")
     # Pass stub as one of the models so its _call_llm gets picked up
-    result = explain_comparison({"logreg": m1, "dummy": m2, "stub": stub}, X, y,
-                                 task="classification", shap_sample=6)
+    result = explain_comparison(
+        {"logreg": m1, "dummy": m2, "stub": stub}, X, y, task="classification", shap_sample=6
+    )
     fi = result.data["feature_importance"]
     assert "logreg" in fi
     assert "dummy" in fi
@@ -226,6 +234,7 @@ def test_explain_comparison_feature_importance_keys(monkeypatch):
 def test_explain_comparison_no_shap_fallback(monkeypatch):
     """When shap is unavailable, permutation importance is used and result is still valid."""
     import builtins
+
     real_import = builtins.__import__
 
     def mock_import(name, *args, **kwargs):
@@ -240,7 +249,8 @@ def test_explain_comparison_no_shap_fallback(monkeypatch):
 
     monkeypatch.setattr(builtins, "__import__", mock_import)
 
-    result = explain_comparison({"logreg": m1, "stub": stub}, X, y, task="classification",
-                                 shap_sample=6)
+    result = explain_comparison(
+        {"logreg": m1, "stub": stub}, X, y, task="classification", shap_sample=6
+    )
     assert isinstance(result, Explanation)
     assert result.data["feature_importance"]

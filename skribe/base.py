@@ -7,7 +7,6 @@ import re
 import time
 import traceback
 import warnings
-
 from typing import Callable, Optional
 
 from sklearn.base import BaseEstimator
@@ -16,11 +15,11 @@ from sklearn.exceptions import NotFittedError
 from .explain import Explanation
 from .prompt_markers import CONTEXT_END, CONTEXT_START, DATA_MARKER
 from .utils import (
+    extract_python_code,
     generate_feature_dicts,
     make_predict_fn,
-    prepare_training_data,
-    extract_python_code,
     parse_tsv,
+    prepare_training_data,
     sanitize_dataset_description,
 )
 
@@ -240,9 +239,7 @@ class BaseSkribeEstimator(BaseEstimator):
             try:
                 self.predict_fn = make_predict_fn(self.python_code_)
             except Exception as e:
-                warnings.warn(
-                    f"Failed to recompile regression function: {e}", UserWarning
-                )
+                warnings.warn(f"Failed to recompile regression function: {e}", UserWarning)
                 self.predict_fn = None
 
     # Models that use the Responses API for web search (tools=[{"type": "web_search"}]).
@@ -272,9 +269,7 @@ class BaseSkribeEstimator(BaseEstimator):
     }
 
     # Union for external checks (e.g. warnings when model is unsupported).
-    _WEB_SEARCH_MODELS = (
-        _WEB_SEARCH_RESPONSES_API_MODELS | _WEB_SEARCH_CHAT_COMPLETIONS_MODELS
-    )
+    _WEB_SEARCH_MODELS = _WEB_SEARCH_RESPONSES_API_MODELS | _WEB_SEARCH_CHAT_COMPLETIONS_MODELS
 
     def _call_llm(self, prompt: str, web_search: bool = False) -> str:
         """Call the language model via litellm, return the response text.
@@ -352,7 +347,11 @@ class BaseSkribeEstimator(BaseEstimator):
             logger.warning(
                 "Context window exceeded at API level (local token count was inaccurate) — "
                 "will reduce dataset and retry%s. Error: %s",
-                f" using real limit {real_max_input_tokens:,} tokens" if real_max_input_tokens else "",
+                (
+                    f" using real limit {real_max_input_tokens:,} tokens"
+                    if real_max_input_tokens
+                    else ""
+                ),
                 e,
             )
             raise _ContextWindowExceeded(str(e), real_max_input_tokens)
@@ -395,7 +394,6 @@ class BaseSkribeEstimator(BaseEstimator):
         the time this runs, so without ``label_names`` there would be nothing
         but bare ints to go on and the LLM would have to guess what they mean.
         """
-        import pandas as pd
 
         # Build a value-summary: unique values per column, capped so a single
         # high-cardinality or near-continuous column (e.g. free-text track
@@ -419,9 +417,7 @@ class BaseSkribeEstimator(BaseEstimator):
 
         target_codes = sample_df[target_name].dropna().unique()
         if label_names:
-            target_uniq = sorted(
-                str(label_names.get(code, code)) for code in target_codes
-            )
+            target_uniq = sorted(str(label_names.get(code, code)) for code in target_codes)
         else:
             target_uniq = sorted(str(v) for v in target_codes)
 
@@ -458,9 +454,7 @@ class BaseSkribeEstimator(BaseEstimator):
             logger.info("[Context pre-pass] Result:\n%s", result)
             return result
         except Exception as e:
-            logger.warning(
-                "[Context pre-pass] Failed (%s); falling back to raw description.", e
-            )
+            logger.warning("[Context pre-pass] Failed (%s); falling back to raw description.", e)
             return sanitize_dataset_description(dataset_description)
 
     def _build_prompt_without_data(
@@ -551,7 +545,9 @@ class BaseSkribeEstimator(BaseEstimator):
                     f"representative typical value (median) of the training target, "
                     f"not necessarily 0.0."
                 )
-            context_block = f"{fallback_line}\n\n{context_block}" if context_block else fallback_line
+            context_block = (
+                f"{fallback_line}\n\n{context_block}" if context_block else fallback_line
+            )
 
         if context_block:
             context_section = f"{CONTEXT_START}\n{context_block}\n{CONTEXT_END}\n\n"
@@ -585,10 +581,15 @@ class BaseSkribeEstimator(BaseEstimator):
         if "gemini" in self.model.lower():
             try:
                 import os
+
                 from google import genai
 
-                project = os.environ.get("VERTEXAI_PROJECT") or os.environ.get("GOOGLE_CLOUD_PROJECT")
-                location = self.vertex_location or os.environ.get("VERTEXAI_LOCATION") or "us-central1"
+                project = os.environ.get("VERTEXAI_PROJECT") or os.environ.get(
+                    "GOOGLE_CLOUD_PROJECT"
+                )
+                location = (
+                    self.vertex_location or os.environ.get("VERTEXAI_LOCATION") or "us-central1"
+                )
                 # Extract bare model name (strip "vertex_ai/" prefix if present)
                 model_name = self.model.split("/")[-1].replace("+web", "")
                 client = genai.Client(vertexai=True, project=project, location=location)
@@ -602,7 +603,10 @@ class BaseSkribeEstimator(BaseEstimator):
         return litellm.token_counter(model=self.model, messages=messages)
 
     def _truncate_to_context_window(
-        self, df, prompt_template: str, headroom: float = _CONTEXT_HEADROOM,
+        self,
+        df,
+        prompt_template: str,
+        headroom: float = _CONTEXT_HEADROOM,
         max_input_override: Optional[int] = None,
     ) -> "pd.DataFrame":
         """Return df truncated so the full prompt fits within the model's context window.
@@ -616,7 +620,6 @@ class BaseSkribeEstimator(BaseEstimator):
         can be stale or wrong (see _ContextWindowExceeded).
         """
         import litellm
-        import pandas as pd
 
         if max_input_override:
             max_input = max_input_override
@@ -630,7 +633,8 @@ class BaseSkribeEstimator(BaseEstimator):
                 logger.warning(
                     "Could not determine context window for model %r (%s) — "
                     "skipping token-limit check.",
-                    self.model, e,
+                    self.model,
+                    e,
                 )
                 return df
 
@@ -681,7 +685,8 @@ class BaseSkribeEstimator(BaseEstimator):
         )
         logger.warning(
             "Truncating training data from %d to %d rows to fit context window.",
-            original_rows, kept,
+            original_rows,
+            kept,
         )
         return df.iloc[:kept].copy()
 
@@ -704,7 +709,8 @@ class BaseSkribeEstimator(BaseEstimator):
         if self.max_train_rows is not None and len(data) > self.max_train_rows:
             logger.info(
                 "Reducing training data from %d to %d rows (max_train_rows).",
-                len(data), self.max_train_rows,
+                len(data),
+                self.max_train_rows,
             )
             data = data.sample(self.max_train_rows, random_state=42)
         else:
@@ -729,8 +735,11 @@ class BaseSkribeEstimator(BaseEstimator):
             context_block = None
 
         prompt_template = self._build_prompt_without_data(
-            prompt, synthetic_features, context_block,
-            label_names=label_names, target_name=self.target_name_,
+            prompt,
+            synthetic_features,
+            context_block,
+            label_names=label_names,
+            target_name=self.target_name_,
             majority_class=majority_class,
         )
 
@@ -738,7 +747,10 @@ class BaseSkribeEstimator(BaseEstimator):
         max_input_override = None
         while True:
             sample_df = self._truncate_to_context_window(
-                data, prompt_template, headroom=headroom, max_input_override=max_input_override,
+                data,
+                prompt_template,
+                headroom=headroom,
+                max_input_override=max_input_override,
             )
             base_prompt = prompt_template.replace("{data}", sample_df.to_csv(index=False))
 
@@ -746,11 +758,7 @@ class BaseSkribeEstimator(BaseEstimator):
             logger.info(f"[LLM Prompt]\n{base_prompt}")
 
             validation_rows = (
-                list(
-                    generate_feature_dicts(
-                        sample_df[self.feature_names_], self.feature_names_
-                    )
-                )
+                list(generate_feature_dicts(sample_df[self.feature_names_], self.feature_names_))
                 if self.feature_names_
                 else []
             )
@@ -768,7 +776,9 @@ class BaseSkribeEstimator(BaseEstimator):
                     # spending headroom-shrink budget on a guess.
                     logger.warning(
                         "Correcting max_input_tokens for %r to the API-reported "
-                        "value %d and retrying.", self.model, e.real_max_input_tokens,
+                        "value %d and retrying.",
+                        self.model,
+                        e.real_max_input_tokens,
                     )
                     self.fit_log_.append(
                         {
@@ -788,7 +798,8 @@ class BaseSkribeEstimator(BaseEstimator):
                 logger.warning(
                     "Context window still exceeded at headroom=%.0f%% — shrinking to "
                     "%.0f%% and retrying.",
-                    headroom * 100, new_headroom * 100,
+                    headroom * 100,
+                    new_headroom * 100,
                 )
                 self.fit_log_.append(
                     {
@@ -807,7 +818,8 @@ class BaseSkribeEstimator(BaseEstimator):
                     )
                 logger.warning(
                     "Output truncated at headroom=%.0f%% — shrinking to %.0f%% and retrying.",
-                    headroom * 100, new_headroom * 100,
+                    headroom * 100,
+                    new_headroom * 100,
                 )
                 self.fit_log_.append(
                     {
@@ -822,7 +834,11 @@ class BaseSkribeEstimator(BaseEstimator):
         return self
 
     def _generate_code(
-        self, base_prompt: str, validation_rows: list, validation_labels: list = [], web_search: bool = False
+        self,
+        base_prompt: str,
+        validation_rows: list,
+        validation_labels: list = [],
+        web_search: bool = False,
     ):
         """Generate code from the LLM with a validation-and-retry loop.
 
@@ -838,9 +854,7 @@ class BaseSkribeEstimator(BaseEstimator):
         for attempt in range(self.max_retries + 1):
             # Web search only on the first attempt; retries don't need it.
             # _OutputTruncated propagates immediately to _fit for data reduction.
-            code = self._call_llm(
-                base_prompt + feedback, web_search=web_search and attempt == 0
-            )
+            code = self._call_llm(base_prompt + feedback, web_search=web_search and attempt == 0)
             if not isinstance(code, str):
                 code = str(code)
             logger.info(f"[LLM Output]\n{code}")
@@ -889,11 +903,10 @@ class BaseSkribeEstimator(BaseEstimator):
         executes without raising. Any exception is treated as a validation
         failure so ``_fit`` can retry with the error fed back to the LLM."""
         import inspect
+
         sig = inspect.signature(predict_fn)
         params = sig.parameters
-        has_var_keyword = any(
-            p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values()
-        )
+        has_var_keyword = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in params.values())
         if not has_var_keyword:
             if rows:
                 expected = set(rows[0].keys())
@@ -938,7 +951,9 @@ class BaseSkribeEstimator(BaseEstimator):
             except Exception as e:
                 logger.warning(
                     "[Post-Process] Attempt %d/%d failed: %s",
-                    attempt + 1, self._EXTEND_MAX_RETRIES, e,
+                    attempt + 1,
+                    self._EXTEND_MAX_RETRIES,
+                    e,
                 )
                 feedback = (
                     f"\n\nThe code you returned has an error: {e}\n"
@@ -956,9 +971,7 @@ class BaseSkribeEstimator(BaseEstimator):
             or not hasattr(self, "target_name_")
             or self.target_name_ is None
         ):
-            raise RuntimeError(
-                "Call fit() before sample(): feature names or target name not set."
-            )
+            raise RuntimeError("Call fit() before sample(): feature names or target name not set.")
         prompt = (
             f"{self.python_code_}\n\n"
             f"Please generate {n} example rows in tabular format with the following columns:\n"

@@ -45,8 +45,6 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from benchmark_utils import (
     BASELINE_MODELS,
-    DEFAULT_DATASETS,
-    MODEL_PROGRESSION,
     build_summary_df,
     plot_progression,
     print_summary_table,

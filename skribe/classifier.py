@@ -1,7 +1,7 @@
 import logging
+
 import numpy as np
 import pandas as pd
-
 from sklearn.base import ClassifierMixin
 
 from .base import BaseSkribeEstimator, resolve_model
@@ -14,8 +14,7 @@ from .utils import (
 logger = logging.getLogger("skribe")
 
 # Updated LLM prompt template with strong type casting and fallback instructions
-DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE = (
-"""
+DEFAULT_CLASSIFICATION_PROMPT_TEMPLATE = """
 Output a single valid Python function called 'predict' that, given the feature variables (see below), predicts the class as an integer (e.g., 0, 1).
 
 Do NOT use any variable not defined below or present in the provided data. If you need external lookups, include them as Python lists or dicts at the top of your output.
@@ -34,9 +33,7 @@ Every string literal MUST be valid, properly terminated Python. If a dictionary 
 
 Only output valid Python code, no markdown or explanations.
 
-"""
-+ DATA_MARKER + "\n{data}\n"
-)
+""" + DATA_MARKER + "\n{data}\n"
 
 
 class SkribeClassifier(ClassifierMixin, BaseSkribeEstimator):
@@ -62,9 +59,7 @@ class SkribeClassifier(ClassifierMixin, BaseSkribeEstimator):
             llm_timeout=llm_timeout,
         )
 
-    def fit(
-        self, X, y, synthetic_features=None, dataset_description=None
-    ) -> "SkribeClassifier":
+    def fit(self, X, y, synthetic_features=None, dataset_description=None) -> "SkribeClassifier":
         y = pd.Series(y).reset_index(drop=True)
         # classes_ in sorted order, sklearn-LabelEncoder style. Encoding here
         # (rather than requiring the caller to pre-encode) means skribe always
@@ -86,9 +81,7 @@ class SkribeClassifier(ClassifierMixin, BaseSkribeEstimator):
         # replayed 0.54 purely by using the majority class as the fallback
         # instead of code 0). Stating the true majority code removes the
         # guesswork.
-        self.majority_class_ = (
-            int(y_encoded.value_counts().idxmax()) if len(y_encoded) else 0
-        )
+        self.majority_class_ = int(y_encoded.value_counts().idxmax()) if len(y_encoded) else 0
 
         return super()._fit(
             X,

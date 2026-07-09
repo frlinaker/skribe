@@ -20,9 +20,8 @@ Most structural tests stub ``_call_llm`` so they neither hit the network nor
 assert on LLM phrasing; the fidelity test is intentionally a live call.
 """
 
-import pytest
 import pandas as pd
-
+import pytest
 from sklearn.exceptions import NotFittedError
 
 from skribe.classifier import SkribeClassifier
@@ -47,9 +46,7 @@ def _make_fitted(feature_names=("age",), code=KNOWN_CODE):
 # --------------------------------------------------------------------------- #
 def test_explain_returns_meta_and_data(monkeypatch):
     clf = _make_fitted()
-    monkeypatch.setattr(
-        clf, "_call_llm", lambda prompt: "Predicts adult when age >= 18."
-    )
+    monkeypatch.setattr(clf, "_call_llm", lambda prompt: "Predicts adult when age >= 18.")
     e = clf.explain()
     assert isinstance(e.meta, dict)
     assert isinstance(e.data, dict)
@@ -80,9 +77,7 @@ def test_explain_json_roundtrip(monkeypatch):
     from skribe import Explanation  # fails until implemented/exported
 
     clf = _make_fitted()
-    monkeypatch.setattr(
-        clf, "_call_llm", lambda prompt: "Predicts adult when age >= 18."
-    )
+    monkeypatch.setattr(clf, "_call_llm", lambda prompt: "Predicts adult when age >= 18.")
     e = clf.explain()
     restored = Explanation.from_json(e.to_json())
     assert restored.meta == e.meta
@@ -91,9 +86,7 @@ def test_explain_json_roundtrip(monkeypatch):
 
 def test_explain_str_is_summary(monkeypatch):
     clf = _make_fitted()
-    monkeypatch.setattr(
-        clf, "_call_llm", lambda prompt: "Predicts adult when age >= 18."
-    )
+    monkeypatch.setattr(clf, "_call_llm", lambda prompt: "Predicts adult when age >= 18.")
     e = clf.explain()
     assert str(e) == e.summary
 
@@ -119,9 +112,7 @@ def test_explain_no_phantom_features(monkeypatch):
 
 def test_explain_is_selective(monkeypatch):
     clf = _make_fitted(feature_names=("age",))
-    monkeypatch.setattr(
-        clf, "_call_llm", lambda prompt: "Predicts adult when age >= 18."
-    )
+    monkeypatch.setattr(clf, "_call_llm", lambda prompt: "Predicts adult when age >= 18.")
     e = clf.explain()
     assert len(e.features_used) == len(set(e.features_used))  # no duplicates
     assert len(e.features_used) <= len(clf.feature_names_)  # invents nothing
@@ -162,8 +153,6 @@ def test_explain_is_faithful_to_known_rule():
 # --------------------------------------------------------------------------- #
 def test_explain_local_for_instance(monkeypatch):
     clf = _make_fitted(feature_names=("age",))
-    monkeypatch.setattr(
-        clf, "_call_llm", lambda prompt: "age (20) >= 18, so predicted adult (1)."
-    )
+    monkeypatch.setattr(clf, "_call_llm", lambda prompt: "age (20) >= 18, so predicted adult (1).")
     e = clf.explain(pd.DataFrame([{"age": 20}]))
     assert "local" in e.meta["explanations"]

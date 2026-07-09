@@ -12,7 +12,6 @@ import numpy as np
 import pandas as pd
 import pytest
 from sklearn.linear_model import LogisticRegression
-from sklearn.pipeline import Pipeline
 
 from skribe import AdaptiveSkribeEngineer, SkribeFeatureEngineer
 
@@ -34,9 +33,7 @@ def _mock(fe, code=GOOD_CODE):
 
 @pytest.fixture
 def Xy():
-    X = pd.DataFrame(
-        {"country": ["sweden", "india", "sweden", "india"], "age": [30, 12, 41, 9]}
-    )
+    X = pd.DataFrame({"country": ["sweden", "india", "sweden", "india"], "age": [30, 12, 41, 9]})
     y = pd.Series([1, 0, 1, 0], name="label")
     return X, y
 
@@ -84,9 +81,7 @@ def test_transform_row_failure_yields_nan(Xy):
 def test_validation_rejects_nondict_output(Xy):
     X, y = Xy
     fe = _mock(SkribeFeatureEngineer(verbose=False, max_retries=0))
-    fe._call_llm = (
-        lambda prompt, web_search=False: "def transform(**features):\n    return 42\n"
-    )
+    fe._call_llm = lambda prompt, web_search=False: "def transform(**features):\n    return 42\n"
     with pytest.raises(ValueError, match="must return a dict"):
         fe.fit(X, y)
 
@@ -160,7 +155,6 @@ def test_live_feature_engineering():
 # Returns (score_base, score_fe, probe_n).
 def _patch_probe(afe, score_base, score_fe):
     """Inject a fake probe result into an AdaptiveSkribeEngineer instance."""
-    import skribe.feature_engineer as _fem
 
     def _fake_probe(X, y, fe, cv, probe_size):
         return score_base, score_fe, min(40, len(X))
@@ -178,7 +172,6 @@ class _MockedAFE(AdaptiveSkribeEngineer):
         self._probe_fe = probe_fe
 
     def fit(self, X, y=None):
-        import math
 
         if not isinstance(X, pd.DataFrame):
             raise ValueError("AdaptiveSkribeEngineer requires a pandas DataFrame.")

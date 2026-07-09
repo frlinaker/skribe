@@ -122,15 +122,17 @@ def plot_lift(records: list[dict], out_path: Path, fe_model: str):
             reason = r["skip_reason"] or ""
             short = "n_rows" if "n_rows" in reason else "probe_delta"
             ax.text(
-                i, 0.005, f"skip\n({short})",
-                ha="center", va="bottom", fontsize=6.5, color="#666666",
+                i,
+                0.005,
+                f"skip\n({short})",
+                ha="center",
+                va="bottom",
+                fontsize=6.5,
+                color="#666666",
             )
 
     ax.set_xticks(x)
-    labels = [
-        f"{ds}\n({'abstract' if ds in ABSTRACT_DATASETS else 'semantic'})"
-        for ds in datasets
-    ]
+    labels = [f"{ds}\n({'abstract' if ds in ABSTRACT_DATASETS else 'semantic'})" for ds in datasets]
     ax.set_xticklabels(labels, fontsize=8.5)
     ax.yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1.0, decimals=0))
     ax.set_ylabel("Accuracy delta (AFE − no FE)")
@@ -158,13 +160,18 @@ def plot_lift(records: list[dict], out_path: Path, fe_model: str):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument(
-        "--fe-model", required=True, metavar="MODEL_ID",
+        "--fe-model",
+        required=True,
+        metavar="MODEL_ID",
         help="fe_model value the with-FE cache files were run with.",
     )
     parser.add_argument(
-        "--output-dir", default="artifacts/benchmark_results",
+        "--output-dir",
+        default="artifacts/benchmark_results",
         help="Directory containing cache/ (default: artifacts/benchmark_results).",
     )
     args = parser.parse_args(argv)

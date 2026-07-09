@@ -3,7 +3,6 @@ import warnings
 
 import numpy as np
 import pandas as pd
-
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
@@ -78,9 +77,7 @@ class SkribeFeatureEngineer(TransformerMixin, BaseSkribeEstimator):
         )
         self.new_feature_names_ = None
 
-    def fit(
-        self, X, y=None, dataset_stats: dict | None = None
-    ) -> "SkribeFeatureEngineer":
+    def fit(self, X, y=None, dataset_stats: dict | None = None) -> "SkribeFeatureEngineer":
         if not isinstance(X, pd.DataFrame):
             raise ValueError(
                 "SkribeFeatureEngineer requires a pandas DataFrame with named columns."
@@ -94,9 +91,7 @@ class SkribeFeatureEngineer(TransformerMixin, BaseSkribeEstimator):
         # Include the target column (when supervised) so the LLM can engineer
         # features that are actually relevant to what we are predicting.
         if y is not None:
-            self.target_name_ = normalize_feature_name(
-                getattr(y, "name", None) or "target"
-            )
+            self.target_name_ = normalize_feature_name(getattr(y, "name", None) or "target")
             sample_source = data.copy()
             sample_source[self.target_name_] = y.values if hasattr(y, "values") else y
             target_line = (
@@ -111,7 +106,8 @@ class SkribeFeatureEngineer(TransformerMixin, BaseSkribeEstimator):
         if self.max_train_rows is not None and len(sample_source) > self.max_train_rows:
             logger.info(
                 "Reducing training data from %d to %d rows (max_train_rows).",
-                len(sample_source), self.max_train_rows,
+                len(sample_source),
+                self.max_train_rows,
             )
             sample_df = sample_source.sample(self.max_train_rows, random_state=42)
         else:
@@ -119,7 +115,9 @@ class SkribeFeatureEngineer(TransformerMixin, BaseSkribeEstimator):
 
         if dataset_stats:
             stats_lines = "\n".join(f"  {k}: {v}" for k, v in dataset_stats.items())
-            dataset_stats_section = f"\nDataset statistics (use to judge whether FE will help):\n{stats_lines}\n"
+            dataset_stats_section = (
+                f"\nDataset statistics (use to judge whether FE will help):\n{stats_lines}\n"
+            )
         else:
             dataset_stats_section = ""
 
@@ -155,9 +153,7 @@ class SkribeFeatureEngineer(TransformerMixin, BaseSkribeEstimator):
 
         rows = [
             self._safe_transform_row(feats)
-            for feats in generate_feature_dicts(
-                X_norm[self.feature_names_], self.feature_names_
-            )
+            for feats in generate_feature_dicts(X_norm[self.feature_names_], self.feature_names_)
         ]
         new_df = pd.DataFrame(rows, index=X.index)
         if self.new_feature_names_:
@@ -168,9 +164,7 @@ class SkribeFeatureEngineer(TransformerMixin, BaseSkribeEstimator):
 
     def get_feature_names_out(self, input_features=None):
         base = (
-            list(input_features)
-            if input_features is not None
-            else list(self.feature_names_ or [])
+            list(input_features) if input_features is not None else list(self.feature_names_ or [])
         )
         extra = [c for c in (self.new_feature_names_ or []) if c not in base]
         return np.asarray(base + extra, dtype=object)
@@ -194,9 +188,7 @@ class SkribeFeatureEngineer(TransformerMixin, BaseSkribeEstimator):
             keysets.add(tuple(sorted(out.keys())))
             first = out
         if len(keysets) > 1:
-            raise ValueError(
-                "transform() must return the same set of feature keys for every row."
-            )
+            raise ValueError("transform() must return the same set of feature keys for every row.")
         # empty dict is valid — LLM decided no new features are useful (pass-through)
 
     def _infer_new_feature_names(self, rows: list) -> list:
@@ -241,9 +233,7 @@ def _make_logreg_pipeline(X: pd.DataFrame) -> Pipeline:
                         ("imp", SimpleImputer(strategy="most_frequent")),
                         (
                             "enc",
-                            OrdinalEncoder(
-                                handle_unknown="use_encoded_value", unknown_value=-1
-                            ),
+                            OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1),
                         ),
                     ]
                 ),
@@ -253,9 +243,7 @@ def _make_logreg_pipeline(X: pd.DataFrame) -> Pipeline:
     clf = LogisticRegression(max_iter=1000, solver="lbfgs")
     if not transformers:
         return Pipeline([("clf", clf)])
-    return Pipeline(
-        [("pre", ColumnTransformer(transformers, remainder="drop")), ("clf", clf)]
-    )
+    return Pipeline([("pre", ColumnTransformer(transformers, remainder="drop")), ("clf", clf)])
 
 
 def _probe_fe_delta(
@@ -285,9 +273,7 @@ def _probe_fe_delta(
         train_idx = rng.choice(train_idx, size=probe_n, replace=False)
 
     X_probe = X.iloc[train_idx].reset_index(drop=True)
-    y_probe = (
-        y.iloc[train_idx].reset_index(drop=True) if hasattr(y, "iloc") else y[train_idx]
-    )
+    y_probe = y.iloc[train_idx].reset_index(drop=True) if hasattr(y, "iloc") else y[train_idx]
 
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")

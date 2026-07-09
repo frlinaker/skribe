@@ -7,10 +7,8 @@ It must NOT import from skribe itself — only the runner scripts do that.
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import os
-import time
 from datetime import datetime
 from pathlib import Path
 
@@ -116,7 +114,9 @@ BASELINE_MODELS = {b["name"] for b in _CONFIG["baselines"]}
 
 # name -> {label, color}, for scripts that need baseline display metadata
 # (e.g. build_skribe_inspector.py).
-BASELINE_META = {b["name"]: {"label": b["label"], "color": b["color"]} for b in _CONFIG["baselines"]}
+BASELINE_META = {
+    b["name"]: {"label": b["label"], "color": b["color"]} for b in _CONFIG["baselines"]
+}
 
 # Ordered oldest → newest. release_date is approximate; used as the x-axis value.
 MODEL_PROGRESSION = _build_model_progression(_CONFIG)
@@ -124,24 +124,30 @@ MODEL_PROGRESSION = _build_model_progression(_CONFIG)
 DEFAULT_DATASETS = _build_default_datasets(_CONFIG)
 
 
-def load_dataset(openml_name, version, max_rows: int | None, csv_path=None, target_col=None, description=None, require_description=True):
+def load_dataset(
+    openml_name,
+    version,
+    max_rows: int | None,
+    csv_path=None,
+    target_col=None,
+    description=None,
+    require_description=True,
+):
     if csv_path is not None:
         df = pd.read_csv(csv_path)
         y_str = df[target_col].astype(str)
         X = df.drop(columns=[target_col])
         resolved_description = description or ""
     else:
-        bunch = fetch_openml(
-            name=openml_name, version=version, as_frame=True, parser="auto"
-        )
+        bunch = fetch_openml(name=openml_name, version=version, as_frame=True, parser="auto")
         X = bunch.data.copy()
         y_str = pd.Series(np.asarray(bunch.target)).astype(str)
         resolved_description = description or getattr(bunch, "DESCR", None) or ""
     if require_description and not resolved_description:
         raise ValueError(
-            f"Dataset has no description — the context pre-pass cannot run. "
-            f"Add a description string to the DEFAULT_DATASETS entry, "
-            f"or pass --skip-context to explicitly disable the pre-pass."
+            "Dataset has no description — the context pre-pass cannot run. "
+            "Add a description string to the DEFAULT_DATASETS entry, "
+            "or pass --skip-context to explicitly disable the pre-pass."
         )
     classes = {c: i for i, c in enumerate(sorted(y_str.unique()))}
     y = y_str.map(classes).astype(int)
@@ -173,9 +179,7 @@ def _rich_metrics(
         "accuracy": float(accuracy_score(y_true, y_pred)),
         "balanced_accuracy": float(balanced_accuracy_score(y_true, y_pred)),
         "f1_macro": float(f1_score(y_true, y_pred, average="macro", zero_division=0)),
-        "f1_weighted": float(
-            f1_score(y_true, y_pred, average="weighted", zero_division=0)
-        ),
+        "f1_weighted": float(f1_score(y_true, y_pred, average="weighted", zero_division=0)),
         "error_rate": float(1 - accuracy_score(y_true, y_pred)),
     }
     if y_proba is not None:
@@ -220,9 +224,7 @@ def _xgb_classifier():
         from xgboost import XGBClassifier
     except ImportError:
         return None
-    return XGBClassifier(
-        n_estimators=200, max_depth=4, learning_rate=0.1, n_jobs=4, verbosity=0
-    )
+    return XGBClassifier(n_estimators=200, max_depth=4, learning_rate=0.1, n_jobs=4, verbosity=0)
 
 
 def _tabpfn_classifier():
@@ -319,13 +321,14 @@ def build_summary_df(results: list[dict]) -> pd.DataFrame:
 
 
 def plot_progression(df: pd.DataFrame, output_dir: Path):
-    import matplotlib.pyplot as plt
     import matplotlib.dates as mdates
+    import matplotlib.pyplot as plt
     import matplotlib.ticker as mticker
     import seaborn as sns
 
     sns.set_theme(style="whitegrid", palette="muted", font_scale=1.1)
     import matplotlib as mpl
+
     mpl.rcParams["grid.alpha"] = 0.18
     mpl.rcParams["grid.color"] = "#b0b0b0"
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -577,6 +580,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
         # Add phantom points along each baseline so labels are repelled from them.
         if _baseline_ys and _pt_x:
             import numpy as _np
+
             x_min, x_max = min(_pt_x), max(_pt_x)
             _phantom_x = _np.linspace(x_min, x_max, 30).tolist()
             for _by in _baseline_ys:
@@ -590,11 +594,17 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
         # filtering to genuinely crowded pairs first avoids moving isolated
         # labels (e.g. GPT-4o, Gemini 2.5 Flash Lite) for no reason.
         fig.canvas.draw()
-        _boxes = [t.get_window_extent(renderer=fig.canvas.get_renderer()) for t in _annotation_texts]
+        _boxes = [
+            t.get_window_extent(renderer=fig.canvas.get_renderer()) for t in _annotation_texts
+        ]
         _crowded = [
             txt
             for i, txt in enumerate(_annotation_texts)
-            if any(_boxes[i].expanded(1.15, 1.6).overlaps(_boxes[j]) for j in range(len(_boxes)) if j != i)
+            if any(
+                _boxes[i].expanded(1.15, 1.6).overlaps(_boxes[j])
+                for j in range(len(_boxes))
+                if j != i
+            )
         ]
 
         if _crowded:
@@ -620,17 +630,23 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
     # Sort legend entries by the numeric value embedded in the label (highest first).
     handles, labels = ax.get_legend_handles_labels()
     import re as _re
+
     def _legend_sort_key(hl):
         m = _re.search(r"\((\d+\.\d+)\)", hl[1])
         return -float(m.group(1)) if m else 0.0
-    handles, labels = zip(*sorted(zip(handles, labels), key=_legend_sort_key)) if handles else (handles, labels)
+
+    handles, labels = (
+        zip(*sorted(zip(handles, labels), key=_legend_sort_key)) if handles else (handles, labels)
+    )
     if not lr_data.empty:
         # Anchor the legend's top edge just below the Logistic Regression
         # line instead of the axes' top-left corner — x stays at the left
         # edge (axes fraction 0), only y moves, via a transform that mixes
         # axes-fraction x with data-coordinate y.
         ax.legend(
-            handles, labels, fontsize=10,
+            handles,
+            labels,
+            fontsize=10,
             loc="upper left",
             bbox_to_anchor=(0, lr_mean - 0.01),
             bbox_transform=ax.get_yaxis_transform(),
@@ -646,17 +662,11 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
     # ── 2. Per-dataset heatmap: datasets × LLM models, skribe accuracy ──
     # Order columns by release date.
     col_order = (
-        pl_data.sort_values("release_date")["llm_label"].tolist()
-        if not pl_data.empty
-        else None
+        pl_data.sort_values("release_date")["llm_label"].tolist() if not pl_data.empty else None
     )
-    pl_pivot = pl_df.pivot_table(
-        index="dataset", columns="llm_label", values="accuracy"
-    )
+    pl_pivot = pl_df.pivot_table(index="dataset", columns="llm_label", values="accuracy")
     if col_order:
-        pl_pivot = pl_pivot.reindex(
-            columns=[c for c in col_order if c in pl_pivot.columns]
-        )
+        pl_pivot = pl_pivot.reindex(columns=[c for c in col_order if c in pl_pivot.columns])
     # Sort rows by mean accuracy ascending so weakest datasets sit at the top.
     pl_pivot = pl_pivot.loc[pl_pivot.mean(axis=1).sort_values().index]
 
@@ -727,7 +737,8 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
         }
 
         fig3, (ax3_top, ax3_bot) = plt.subplots(
-            2, 1,
+            2,
+            1,
             figsize=(max(10, n_cols * 1.5), 10),
             sharex=True,
         )
@@ -748,15 +759,20 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                 prov_name = "OpenAI GPT" if prov == "openai" else "Google Gemini"
                 label_str = f"skribe / {prov_name}"
                 bar = ax.bar(
-                    i, row["accuracy"], color=color,
+                    i,
+                    row["accuracy"],
+                    color=color,
                     label=label_str if label_str not in _legend_seen else "_nolegend_",
                     zorder=3,
                 )
                 _legend_seen.add(label_str)
                 ax.text(
-                    i, row["accuracy"] + 0.005,
+                    i,
+                    row["accuracy"] + 0.005,
                     f"{row['accuracy']:.2f}",
-                    ha="center", va="bottom", fontsize=8,
+                    ha="center",
+                    va="bottom",
+                    fontsize=8,
                 )
             for lbl, val in baseline_means_3.items():
                 color_map = {
@@ -765,23 +781,33 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                     "TabPFN": "#FF7F0E",
                 }
                 c = color_map.get(lbl, "#888")
-                ax.axhline(val, color=c, linewidth=1.8, linestyle="--",
-                           label=f"{lbl}  ({val:.3f})", zorder=4)
+                ax.axhline(
+                    val,
+                    color=c,
+                    linewidth=1.8,
+                    linestyle="--",
+                    label=f"{lbl}  ({val:.3f})",
+                    zorder=4,
+                )
             ax.yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1.0, decimals=0))
             ax.set_ylim(0, 1.12)
             ax.set_ylabel(f"Mean accuracy ({n_datasets} datasets)", fontsize=11)
             ax.set_title(title_suffix, fontsize=12, fontweight="bold")
             ax.grid(axis="y", alpha=0.18)
             handles_l, labels_l = ax.get_legend_handles_labels()
+
             def _lk(hl):
                 m = _re.search(r"\((\d+\.\d+)\)", hl[1])
                 return -float(m.group(1)) if m else 0.0
+
             if handles_l:
                 handles_l, labels_l = zip(*sorted(zip(handles_l, labels_l), key=_lk))
             ax.legend(handles_l, labels_l, fontsize=9, loc="lower right")
 
         _draw_bar_row(ax3_top, base_lookup, "Without web search")
-        _draw_bar_row(ax3_bot, web_by_base, "With web search  (+web variants only; gaps = no web support)")
+        _draw_bar_row(
+            ax3_bot, web_by_base, "With web search  (+web variants only; gaps = no web support)"
+        )
 
         ax3_bot.set_xticks(x)
         ax3_bot.set_xticklabels(base_order, rotation=30, ha="right", fontsize=9)
@@ -789,7 +815,8 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
 
         fig3.suptitle(
             "skribe vs baselines: mean accuracy by LLM generation",
-            fontsize=13, y=1.01,
+            fontsize=13,
+            y=1.01,
         )
         fig3.tight_layout()
         out3 = output_dir / "all_learners_bar.png"
@@ -825,7 +852,9 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                 is_web = bool(row.get("web_search", False))
                 color = base if row["gap"] >= 0 else base + "80"
                 ax4.bar(
-                    i, row["gap"], color=color,
+                    i,
+                    row["gap"],
+                    color=color,
                     hatch="//" if is_web else "",
                     edgecolor="white" if not is_web else base,
                     linewidth=0.5,
@@ -849,9 +878,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                 "Solid = above baseline  ·  Faded = below  ·  // = +web search",
                 fontsize=12,
             )
-            ax4.yaxis.set_major_formatter(
-                mticker.PercentFormatter(xmax=1.0, decimals=1)
-            )
+            ax4.yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1.0, decimals=1))
             ax4.grid(axis="y", alpha=0.18)
             fig4.tight_layout()
             out4 = output_dir / "gap_to_baseline.png"
@@ -864,9 +891,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
     if datasets and not pl_data.empty:
         ncols = 2
         nrows = (len(datasets) + ncols - 1) // ncols
-        fig5, axes = plt.subplots(
-            nrows, ncols, figsize=(ncols * 6, nrows * 3.8), squeeze=False
-        )
+        fig5, axes = plt.subplots(nrows, ncols, figsize=(ncols * 6, nrows * 3.8), squeeze=False)
 
         # Baseline means are dataset-specific here (not cross-dataset).
         for idx, dataset in enumerate(datasets):
@@ -984,9 +1009,16 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
             ax.set_title(dataset, fontsize=11, fontweight="bold")
             _h, _lb = ax.get_legend_handles_labels()
             if _h:
-                _h, _lb = zip(*sorted(zip(_h, _lb), key=lambda hl: (
-                    -float(m.group(1)) if (m := _re.search(r"\((\d+\.\d+)\)", hl[1])) else 0.0
-                )))
+                _h, _lb = zip(
+                    *sorted(
+                        zip(_h, _lb),
+                        key=lambda hl: (
+                            -float(m.group(1))
+                            if (m := _re.search(r"\((\d+\.\d+)\)", hl[1]))
+                            else 0.0
+                        ),
+                    )
+                )
             ax.legend(_h, _lb, fontsize=7.5, loc="lower right")
             ax.tick_params(axis="x", rotation=25, labelsize=7.5)
             ax.grid(True, alpha=0.18)
@@ -1040,8 +1072,7 @@ def print_summary_table(df: pd.DataFrame):
         brows = df[df["learner"] == learner]
         if brows.empty:
             continue
-        row_data = {ds: brows[brows["dataset"] == ds]["accuracy"].mean()
-                    for ds in all_datasets}
+        row_data = {ds: brows[brows["dataset"] == ds]["accuracy"].mean() for ds in all_datasets}
         row_data["MEAN"] = brows["accuracy"].mean()
         row_series = pd.Series(row_data, name=learner)
         print(f"\n{learner}")

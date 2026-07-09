@@ -10,7 +10,6 @@ Covers:
 """
 
 import pandas as pd
-import pytest
 
 from skribe import SkribeClassifier, SkribeRegressor
 from skribe.prompt_markers import CONTEXT_END, CONTEXT_START, DATA_MARKER
@@ -127,7 +126,9 @@ def test_fit_prompt_contains_no_unresolved_placeholders(monkeypatch):
 
 def test_regressor_fit_prompt_marker_order(monkeypatch):
     reg = SkribeRegressor(model="gpt-5.4-mini", verbose=False, context_prepass=False)
-    monkeypatch.setattr(reg, "_call_llm", lambda p, web_search=False: "def predict(**f): return 1.0")
+    monkeypatch.setattr(
+        reg, "_call_llm", lambda p, web_search=False: "def predict(**f): return 1.0"
+    )
 
     X = pd.DataFrame({"height": [1.0, 2.0]})
     y = pd.Series([0.5, 1.0])
@@ -145,7 +146,9 @@ def test_regressor_fallback_states_median_even_without_description(monkeypatch):
     (e.g. a price or age of 0.0).
     """
     reg = SkribeRegressor(model="gpt-5.4-mini", verbose=False, context_prepass=False)
-    monkeypatch.setattr(reg, "_call_llm", lambda p, web_search=False: "def predict(**f): return 1.0")
+    monkeypatch.setattr(
+        reg, "_call_llm", lambda p, web_search=False: "def predict(**f): return 1.0"
+    )
 
     X = pd.DataFrame({"height": [1.0, 2.0, 3.0]})
     y = pd.Series([10.0, 20.0, 1000.0])  # median=20.0, mean~343.3
@@ -241,8 +244,9 @@ def test_prepass_value_summary_caps_high_cardinality_columns(monkeypatch):
     """
     clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
     monkeypatch.setattr(
-        clf, "_call_llm",
-        lambda p, web_search=False: "def predict(**f): return int(int(f.get('val', 0)) > 14)"
+        clf,
+        "_call_llm",
+        lambda p, web_search=False: "def predict(**f): return int(int(f.get('val', 0)) > 14)",
     )
 
     # 30 unique values in each column — over the 20-value cap.

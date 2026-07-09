@@ -13,8 +13,8 @@ import joblib
 import pandas as pd
 
 from skribe.classifier import SkribeClassifier
-from skribe.regressor import SkribeRegressor
 from skribe.explain import Explanation
+from skribe.regressor import SkribeRegressor
 
 # A sentinel that looks like a real key; placed in the environment so that, if
 # anything captured the key, it would show up verbatim in the dump.

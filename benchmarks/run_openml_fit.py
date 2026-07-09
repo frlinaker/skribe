@@ -61,7 +61,7 @@ def _build_baseline_pipeline(model: str, X_train):
     from sklearn.impute import SimpleImputer
     from sklearn.linear_model import LogisticRegression
     from sklearn.pipeline import Pipeline
-    from sklearn.preprocessing import OrdinalEncoder, OneHotEncoder, StandardScaler
+    from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, StandardScaler
 
     cat_cols = X_train.select_dtypes(include=["object", "category"]).columns.tolist()
     num_cols = [c for c in X_train.columns if c not in cat_cols]
@@ -69,31 +69,46 @@ def _build_baseline_pipeline(model: str, X_train):
 
     if model == "logreg":
         if cat_cols:
-            transformers.append((
-                "cat",
-                Pipeline([
-                    ("imp", SimpleImputer(strategy="most_frequent")),
-                    ("enc", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
-                ]),
-                cat_cols,
-            ))
+            transformers.append(
+                (
+                    "cat",
+                    Pipeline(
+                        [
+                            ("imp", SimpleImputer(strategy="most_frequent")),
+                            ("enc", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
+                        ]
+                    ),
+                    cat_cols,
+                )
+            )
         if num_cols:
-            transformers.append((
-                "num",
-                Pipeline([("imp", SimpleImputer(strategy="mean")), ("scl", StandardScaler())]),
-                num_cols,
-            ))
+            transformers.append(
+                (
+                    "num",
+                    Pipeline([("imp", SimpleImputer(strategy="mean")), ("scl", StandardScaler())]),
+                    num_cols,
+                )
+            )
         clf = LogisticRegression(max_iter=1000)
     else:
         if cat_cols:
-            transformers.append((
-                "cat",
-                Pipeline([
-                    ("imp", SimpleImputer(strategy="most_frequent")),
-                    ("enc", OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1)),
-                ]),
-                cat_cols,
-            ))
+            transformers.append(
+                (
+                    "cat",
+                    Pipeline(
+                        [
+                            ("imp", SimpleImputer(strategy="most_frequent")),
+                            (
+                                "enc",
+                                OrdinalEncoder(
+                                    handle_unknown="use_encoded_value", unknown_value=-1
+                                ),
+                            ),
+                        ]
+                    ),
+                    cat_cols,
+                )
+            )
         if num_cols:
             transformers.append(("num", SimpleImputer(strategy="mean"), num_cols))
         clf = _xgb_classifier() if model == "xgboost" else _tabpfn_classifier()
@@ -114,7 +129,8 @@ def run_one_baseline(
     skip_cache_read: bool = False,
 ) -> dict:
     cache_file = (
-        cache_dir / f"{dataset}-{model}-{_baseline_cache_key(dataset, max_rows, fe_model=fe_model)}.json"
+        cache_dir
+        / f"{dataset}-{model}-{_baseline_cache_key(dataset, max_rows, fe_model=fe_model)}.json"
         if cache_dir
         else None
     )
@@ -130,8 +146,12 @@ def run_one_baseline(
     description = spec[4] if len(spec) > 4 else None
 
     X, y, class_map, _, _ = load_dataset(
-        openml_name, version, max_rows,
-        csv_path=csv_path, target_col=target_col, description=description,
+        openml_name,
+        version,
+        max_rows,
+        csv_path=csv_path,
+        target_col=target_col,
+        description=description,
         require_description=False,
     )
     n_classes = len(class_map)
@@ -205,13 +225,12 @@ def run_one_skribe(
     skip_cache_read: bool = False,
     skip_context: bool = False,
 ) -> dict:
-    actual_model_id = base_model_id or (
-        model_id.removesuffix("-web") if web_search else model_id
-    )
+    actual_model_id = base_model_id or (model_id.removesuffix("-web") if web_search else model_id)
     tag = f"[{dataset} × {model_id}]"
     safe_model_id = model_id.replace("/", "-")
     cache_file = (
-        cache_dir / f"{dataset}-{safe_model_id}-{_cache_key(dataset, model_id, max_rows, fe_model=fe_model, web_search=web_search)}.json"
+        cache_dir
+        / f"{dataset}-{safe_model_id}-{_cache_key(dataset, model_id, max_rows, fe_model=fe_model, web_search=web_search)}.json"
         if cache_dir
         else None
     )
@@ -234,7 +253,9 @@ def run_one_skribe(
         if not is_error:
             print(f"{tag} cached — skipping", flush=True)
             return cached
-        print(f"{tag} cached result was a failure ({cached_skribe['error']!r}) — retrying", flush=True)
+        print(
+            f"{tag} cached result was a failure ({cached_skribe['error']!r}) — retrying", flush=True
+        )
 
     openml_name, version = spec[0], spec[1]
     csv_path = spec[2] if len(spec) > 2 else None
@@ -243,8 +264,12 @@ def run_one_skribe(
 
     print(f"{tag} loading dataset…", flush=True)
     X, y, class_map, description, y_str = load_dataset(
-        openml_name, version, max_rows,
-        csv_path=csv_path, target_col=target_col, description=spec_description,
+        openml_name,
+        version,
+        max_rows,
+        csv_path=csv_path,
+        target_col=target_col,
+        description=spec_description,
         require_description=not skip_context,
     )
     n_classes = len(class_map)
@@ -274,7 +299,10 @@ def run_one_skribe(
             if skip:
                 print(f"{tag} AdaptiveFE skipped: {skip}", flush=True)
             else:
-                print(f"{tag} AdaptiveFE done — {X_train.shape[1]} cols  delta={getattr(fe_step, 'probe_delta_', float('nan')):.3f}", flush=True)
+                print(
+                    f"{tag} AdaptiveFE done — {X_train.shape[1]} cols  delta={getattr(fe_step, 'probe_delta_', float('nan')):.3f}",
+                    flush=True,
+                )
         except Exception as e:
             print(f"{tag} AdaptiveFE FAILED: {e}  (using original features)", flush=True)
 
@@ -301,7 +329,11 @@ def run_one_skribe(
                 step = "extend pass"
             else:
                 _codegen_count[0] += 1
-                step = "code generation" if _codegen_count[0] == 1 else f"retry #{_codegen_count[0] - 1}"
+                step = (
+                    "code generation"
+                    if _codegen_count[0] == 1
+                    else f"retry #{_codegen_count[0] - 1}"
+                )
             ws_note = " [+web]" if web_search else ""
             print(f"{tag}   → {step}{ws_note}…", flush=True)
             t_llm = time.time()
@@ -325,7 +357,10 @@ def run_one_skribe(
         # directly comparable to y_test below.
         clf.fit(X_train, y_str_train, dataset_description=description or None)
         fit_elapsed = time.time() - t_fit
-        print(f"{tag} fit done  ({fit_elapsed:.1f}s)  code={len(clf.raw_python_code_ or ''):,} chars", flush=True)
+        print(
+            f"{tag} fit done  ({fit_elapsed:.1f}s)  code={len(clf.raw_python_code_ or ''):,} chars",
+            flush=True,
+        )
 
         t_predict = time.time()
         y_pred = clf.predict(X_test)
@@ -349,7 +384,10 @@ def run_one_skribe(
         result["skribe"]["fit_log"] = getattr(clf, "fit_log_", [])
         result["skribe"]["status"] = "ok"
         acc = result["skribe"]["accuracy"]
-        print(f"{tag} accuracy={acc:.3f}  fit={fit_elapsed:.1f}s  predict={predict_elapsed:.4f}s  ✓", flush=True)
+        print(
+            f"{tag} accuracy={acc:.3f}  fit={fit_elapsed:.1f}s  predict={predict_elapsed:.4f}s  ✓",
+            flush=True,
+        )
     except Exception as e:
         elapsed = time.time() - t0
         print(f"{tag} FAILED after {elapsed:.1f}s: {e}", flush=True)
@@ -378,7 +416,9 @@ def run_one_skribe(
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
     parser.add_argument(
         "--model",
         choices=ALL_MODELS,
@@ -439,7 +479,9 @@ def main(argv=None):
 
     if args.model == "skribe":
         if not args.llm:
-            parser.error("--llm is required when --model skribe (use --list-models to see valid values)")
+            parser.error(
+                "--llm is required when --model skribe (use --list-models to see valid values)"
+            )
         if args.llm not in _MODEL_LOOKUP:
             parser.error(f"Unknown --llm {args.llm!r}. Use --list-models to see valid values.")
     elif args.llm:

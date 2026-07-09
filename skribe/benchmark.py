@@ -5,14 +5,24 @@ V1: no CLI, few deps, sensible defaults, and Skribe support by default.
 
 from __future__ import annotations
 
-import dataclasses, hashlib, importlib, json, logging, os, sys, time
+import dataclasses
+import hashlib
+import importlib
+import json
+import logging
+import os
+import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Union, Literal, overload
+from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple, Union, overload
 
-import joblib, numpy as np, pandas as pd, yaml
+import joblib
+import numpy as np
+import pandas as pd
 import pandas.api.types as ptypes
+import yaml
 
 # --- Logging -----------------------------------------------------------------
 logger = logging.getLogger("skribe.benchmark")
@@ -41,9 +51,7 @@ class TaskSpec:
         tid = meta.get("id", p.name)
         ttype = meta["task_type"]
         tgt = meta["target"]
-        metrics = list(
-            meta.get("metrics", ["accuracy" if ttype == "classification" else "rmse"])
-        )
+        metrics = list(meta.get("metrics", ["accuracy" if ttype == "classification" else "rmse"]))
         splits = meta.get("splits", {})
         tr = p / splits.get("train", "core/train.csv")
         te = p / splits.get("test", "core/test.csv")
@@ -76,9 +84,7 @@ class ModelSpec:
         if hint is not None and str(self.import_path).startswith("skribe"):
             try:
                 est = Est(model=hint, **params)
-                logger.info(
-                    f"[Skribe] instantiated with model='{hint}' for {self.name}"
-                )
+                logger.info(f"[Skribe] instantiated with model='{hint}' for {self.name}")
                 return est
             except TypeError:
                 logger.warning(
@@ -133,9 +139,7 @@ def make_skribe_variant(
     new_params = dict(base.params)
     new_params["__pl_model_hint__"] = llm_name
     display = name or (
-        "SkribeClf[" + llm_name + "]"
-        if kind == "classifier"
-        else "SkribeReg[" + llm_name + "]"
+        "SkribeClf[" + llm_name + "]" if kind == "classifier" else "SkribeReg[" + llm_name + "]"
     )
     return dataclasses.replace(base, name=display, params=new_params)
 
@@ -173,9 +177,7 @@ def default_models_for_task_type(task_type: str) -> List[ModelSpec]:
             n_estimators=300,
             random_state=0,
         )
-        _try_add(
-            "SVM", "sklearn.svm.SVC", kernel="rbf", probability=True, random_state=0
-        )
+        _try_add("SVM", "sklearn.svm.SVC", kernel="rbf", probability=True, random_state=0)
         _try_add(
             "XGB",
             "xgboost.XGBClassifier",
@@ -189,9 +191,7 @@ def default_models_for_task_type(task_type: str) -> List[ModelSpec]:
         )
         if not disable_llm:
             for llm in llm_variants:
-                pl = make_skribe_variant(
-                    "classifier", llm, name=f"SkribeClf[{llm}]"
-                )
+                pl = make_skribe_variant("classifier", llm, name=f"SkribeClf[{llm}]")
                 if pl:
                     models.append(pl)
     elif task_type == "regression":
@@ -216,9 +216,7 @@ def default_models_for_task_type(task_type: str) -> List[ModelSpec]:
         )
         if not disable_llm:
             for llm in llm_variants:
-                pl = make_skribe_variant(
-                    "regressor", llm, name=f"SkribeReg[{llm}]"
-                )
+                pl = make_skribe_variant("regressor", llm, name=f"SkribeReg[{llm}]")
                 if pl:
                     models.append(pl)
     else:
@@ -299,12 +297,10 @@ def _maybe_wrap_preprocessor(est: Any, spec: ModelSpec, X: pd.DataFrame):
     ]
     num = [c for c in X.columns if c not in cat]
     from sklearn.compose import ColumnTransformer
-    from sklearn.preprocessing import OneHotEncoder, StandardScaler
     from sklearn.pipeline import Pipeline
+    from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-    needs_scale = (
-        any(tok in ip.lower() for tok in [".svm.", "svc", "svr"]) and len(num) > 0
-    )
+    needs_scale = any(tok in ip.lower() for tok in [".svm.", "svc", "svr"]) and len(num) > 0
     num_tr = StandardScaler(with_mean=False) if needs_scale else "passthrough"
     try:
         ohe = OneHotEncoder(handle_unknown="ignore", sparse_output=True)
@@ -335,9 +331,7 @@ def _model_task_category(spec: ModelSpec) -> str:
             return (
                 "both"
                 if (is_c and is_r)
-                else (
-                    "classification" if is_c else ("regression" if is_r else "unknown")
-                )
+                else ("classification" if is_c else ("regression" if is_r else "unknown"))
             )
     except Exception:
         pass
@@ -373,9 +367,7 @@ def _winner_mask(df: pd.DataFrame, primary_metric: str, higher_is_better: bool):
         vals_np = vals.to_numpy(dtype=float, copy=False)
     except Exception:
         vals_np = vals.apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)
-    best_arr = (
-        np.nanmax(vals_np, axis=1) if higher_is_better else np.nanmin(vals_np, axis=1)
-    )
+    best_arr = np.nanmax(vals_np, axis=1) if higher_is_better else np.nanmin(vals_np, axis=1)
     best = pd.Series(best_arr, index=vals.index)
     m = vals.eq(best, axis="index")
     if isinstance(m, pd.Series):
@@ -400,11 +392,7 @@ def mark_winners_for_display(
         df.columns.names and "metric" in df.columns.names
     ):
         mlev = df.columns.names.index("metric")
-        mdl = (
-            df.columns.names.index("model")
-            if "model" in (df.columns.names or [])
-            else 0
-        )
+        mdl = df.columns.names.index("model") if "model" in (df.columns.names or []) else 0
         tcols = [c for c in df.columns if c[mlev] == primary_metric]
         for col in tcols:
             mdl_name = col[mdl]
@@ -497,18 +485,14 @@ def run_benchmark(
     for task_path in task_dirs:
         task = TaskSpec.from_dir(task_path)
         thash = task.fingerprint()
-        logger.info(
-            f"Task: {task.task_id} [{thash}] :: {task.task_type} → target='{task.target}'"
-        )
+        logger.info(f"Task: {task.task_id} [{thash}] :: {task.task_type} → target='{task.target}'")
         train_df = pd.read_csv(task.train_csv)
         test_df = pd.read_csv(task.test_csv)
         X_train, y_train = _split_X_y(train_df, task.target)
         X_test, y_test = _split_X_y(test_df, task.target)
         test_ids = _ensure_row_id(test_df)
         model_list = (
-            list(models)
-            if models is not None
-            else default_models_for_task_type(task.task_type)
+            list(models) if models is not None else default_models_for_task_type(task.task_type)
         )
         for m in model_list:
             if not _is_model_compatible_with_task(m, task.task_type):
@@ -562,9 +546,7 @@ def run_benchmark(
                 },
                 "seed": seed,
             }
-            fit_hash = hashlib.sha1(
-                json.dumps(fit_hash_obj, sort_keys=True).encode()
-            ).hexdigest()
+            fit_hash = hashlib.sha1(json.dumps(fit_hash_obj, sort_keys=True).encode()).hexdigest()
             need_fit = True
             if resume and model_pkl.exists() and fit_hash_path.exists():
                 try:
@@ -577,9 +559,7 @@ def run_benchmark(
                     logger.info(f"[FIT] {m.name} on {task.task_id}…")
                     np.random.seed(seed)
                     est = m.build()
-                    if task.task_type == "regression" and not ptypes.is_numeric_dtype(
-                        y_train
-                    ):
+                    if task.task_type == "regression" and not ptypes.is_numeric_dtype(y_train):
                         y_train = pd.to_numeric(y_train, errors="raise")
                     est = _maybe_wrap_preprocessor(est, m, X_train)
                     if hasattr(est, "set_params"):
@@ -600,9 +580,7 @@ def run_benchmark(
                     est = joblib.load(model_pkl)
                     logger.info(f"[FIT] reused cache → {model_pkl}")
             except Exception as e:
-                metric_keys = (
-                    ["accuracy"] if task.task_type == "classification" else ["rmse"]
-                ) + (
+                metric_keys = (["accuracy"] if task.task_type == "classification" else ["rmse"]) + (
                     ["macro_f1"]
                     if task.task_type == "classification" and "macro_f1" in task.metrics
                     else []
@@ -658,9 +636,7 @@ def run_benchmark(
                 try:
                     existing = pd.read_csv(preds_csv)
                     done_ids = set(existing["row_id"].astype("int64").tolist())
-                    logger.info(
-                        f"[PREDICT] resuming; found {len(done_ids)} rows already predicted"
-                    )
+                    logger.info(f"[PREDICT] resuming; found {len(done_ids)} rows already predicted")
                 except Exception as e:
                     logger.warning(f"Could not resume predictions: {e}")
             all_ids = test_ids
@@ -676,9 +652,7 @@ def run_benchmark(
             )
             t0 = time.time()
             if n_total == 0:
-                pd.DataFrame(columns=["row_id", "y_pred"]).to_csv(
-                    preds_csv, index=False
-                )
+                pd.DataFrame(columns=["row_id", "y_pred"]).to_csv(preds_csv, index=False)
                 json.dump(
                     {
                         "last_chunk_rows": 0,
@@ -692,9 +666,7 @@ def run_benchmark(
                     {
                         "task_id": task.task_id,
                         "model": m.name,
-                        "fit_seconds": json.load(open(fit_hash_path)).get(
-                            "fit_seconds"
-                        ),
+                        "fit_seconds": json.load(open(fit_hash_path)).get("fit_seconds"),
                         "predict_seconds": 0.0,
                         "n_test": 0,
                         "metrics": {},
@@ -732,9 +704,7 @@ def run_benchmark(
                         },
                         open(prog, "w"),
                     )
-                    logger.info(
-                        f"[PREDICT] rows {s}–{e} / {len(remaining_idx)} appended"
-                    )
+                    logger.info(f"[PREDICT] rows {s}–{e} / {len(remaining_idx)} appended")
                 t_pred = time.time() - t0
                 pred_df = (
                     pd.read_csv(preds_csv)
@@ -758,9 +728,7 @@ def run_benchmark(
                     y_pred_np = np.asarray(y_pred)
                     metrics["accuracy"] = float(accuracy_score(y_true_np, y_pred_np))
                     if "macro_f1" in task.metrics:
-                        metrics["macro_f1"] = float(
-                            f1_score(y_true_np, y_pred_np, average="macro")
-                        )
+                        metrics["macro_f1"] = float(f1_score(y_true_np, y_pred_np, average="macro"))
                 else:
                     y_true = y_true.astype(float)
                     y_pred = y_pred.astype(float)
@@ -769,9 +737,7 @@ def run_benchmark(
                     {
                         "task_id": task.task_id,
                         "model": m.name,
-                        "fit_seconds": json.load(open(fit_hash_path)).get(
-                            "fit_seconds"
-                        ),
+                        "fit_seconds": json.load(open(fit_hash_path)).get("fit_seconds"),
                         "predict_seconds": t_pred,
                         "n_test": int(len(y_true)),
                         "metrics": metrics,
@@ -793,9 +759,7 @@ def run_benchmark(
                 logger.info(f"[SCORE] {m.name} on {task.task_id}: {metrics}")
             except Exception as e:
                 t_pred = time.time() - t0
-                metric_keys = (
-                    ["accuracy"] if task.task_type == "classification" else ["rmse"]
-                ) + (
+                metric_keys = (["accuracy"] if task.task_type == "classification" else ["rmse"]) + (
                     ["macro_f1"]
                     if task.task_type == "classification" and "macro_f1" in task.metrics
                     else []
@@ -805,9 +769,7 @@ def run_benchmark(
                     {
                         "task_id": task.task_id,
                         "model": m.name,
-                        "fit_seconds": json.load(open(fit_hash_path)).get(
-                            "fit_seconds"
-                        ),
+                        "fit_seconds": json.load(open(fit_hash_path)).get("fit_seconds"),
                         "predict_seconds": t_pred,
                         "n_test": int(len(X_test)),
                         "metrics": metrics_nan,
@@ -827,9 +789,7 @@ def run_benchmark(
                             "value": np.nan,
                         }
                     )
-                logger.exception(
-                    f"[PREDICT/SCORE][ERROR] {m.name} on {task.task_id}: {e}"
-                )
+                logger.exception(f"[PREDICT/SCORE][ERROR] {m.name} on {task.task_id}: {e}")
                 continue
     df_long = pd.DataFrame(results_long)
     if df_long.empty:

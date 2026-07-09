@@ -149,6 +149,7 @@ def compare_models(models, X_train, y_train, X_test, y_test, task=None):
 # explain_comparison
 # ---------------------------------------------------------------------------
 
+
 def _shap_importance(model, X_sample: pd.DataFrame) -> Optional[pd.Series]:
     """Return mean |SHAP| per feature, or None if shap is not installed."""
     try:
@@ -162,9 +163,12 @@ def _shap_importance(model, X_sample: pd.DataFrame) -> Optional[pd.Series]:
 
     if cat:
         from sklearn.preprocessing import OrdinalEncoder
+
         enc = OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1)
         cat_arr = enc.fit_transform(X_sample[cat])
-        num_arr = X_sample[numeric].to_numpy(dtype=float) if numeric else np.empty((len(X_sample), 0))
+        num_arr = (
+            X_sample[numeric].to_numpy(dtype=float) if numeric else np.empty((len(X_sample), 0))
+        )
         X_arr = np.hstack([num_arr, cat_arr])
         col_names = numeric + cat
     else:
@@ -313,7 +317,9 @@ def explain_comparison(
             break
     if llm_caller is None:
         # Synthesize a minimal caller just for _call_llm
-        llm_caller = BaseSkribeEstimator(model=llm_model or DEFAULT_MODEL, verbose=False, max_train_rows=None)
+        llm_caller = BaseSkribeEstimator(
+            model=llm_model or DEFAULT_MODEL, verbose=False, max_train_rows=None
+        )
 
     if llm_model:
         llm_caller.model = llm_model
@@ -325,19 +331,29 @@ def explain_comparison(
             try:
                 y_pred = np.asarray(est.predict(X_test))
                 if task == "classification":
-                    rows.append({"model": name,
-                                 "accuracy": accuracy_score(y_test, y_pred),
-                                 "f1_macro": f1_score(y_test, y_pred, average="macro")})
+                    rows.append(
+                        {
+                            "model": name,
+                            "accuracy": accuracy_score(y_test, y_pred),
+                            "f1_macro": f1_score(y_test, y_pred, average="macro"),
+                        }
+                    )
                 else:
-                    rows.append({"model": name,
-                                 "rmse": mean_squared_error(y_test, y_pred) ** 0.5,
-                                 "r2": r2_score(y_test, y_pred)})
+                    rows.append(
+                        {
+                            "model": name,
+                            "rmse": mean_squared_error(y_test, y_pred) ** 0.5,
+                            "r2": r2_score(y_test, y_pred),
+                        }
+                    )
             except Exception as e:
                 logger.warning("Could not score model %r: %s", name, e)
         metrics = pd.DataFrame(rows).set_index("model")
 
     # --- SHAP / permutation importance ---
-    sample_idx = np.random.default_rng(42).choice(len(X_test), min(shap_sample, len(X_test)), replace=False)
+    sample_idx = np.random.default_rng(42).choice(
+        len(X_test), min(shap_sample, len(X_test)), replace=False
+    )
     X_sample = X_test.iloc[sample_idx].reset_index(drop=True)
     y_sample = y_test.iloc[sample_idx].reset_index(drop=True)
 
@@ -381,12 +397,16 @@ def explain_comparison(
         for name, arr in preds.items():
             disagree_rows[f"pred_{name}"] = arr[disagree_mask]
 
-        lines = [f"{disagreement_rate:.1%} of test rows ({disagree_mask.sum()}/{len(X_test)}) have at least one model disagreement."]
+        lines = [
+            f"{disagreement_rate:.1%} of test rows ({disagree_mask.sum()}/{len(X_test)}) have at least one model disagreement."
+        ]
         if len(disagree_rows) > 0:
             # Show which model is right on disagreements
             for name in preds:
                 correct = (disagree_rows[f"pred_{name}"] == disagree_rows["y_true"]).mean()
-                lines.append(f"  On disagreement rows: '{name}' is correct {correct:.1%} of the time.")
+                lines.append(
+                    f"  On disagreement rows: '{name}' is correct {correct:.1%} of the time."
+                )
             # Show a few example rows
             sample = disagree_rows.head(5)
             lines.append(f"\nExample disagreement rows (up to 5):\n{sample.to_string()}")

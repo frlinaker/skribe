@@ -46,6 +46,31 @@ def test_call_llm_normalizes_ollama_model(monkeypatch):
     assert out == "hello"
 
 
+def test_call_llm_passes_timeout(monkeypatch):
+    """litellm.completion() must be called with an explicit timeout -- without
+    one, a stalled provider call (observed: a Vertex AI gemini-2.5-flash-lite
+    request that hung for 600s+ with no local bound) blocks that call
+    indefinitely, and under --workers=1 that means the entire sequential
+    benchmark queue stalls behind a single flaky request instead of failing
+    fast and moving on."""
+    import litellm
+
+    captured = {}
+
+    def fake_completion(model, messages, **kwargs):
+        captured.update(kwargs)
+        message = type("Message", (), {"content": "hello"})
+        choice = type("Choice", (), {"message": message})
+        return type("Response", (), {"choices": [choice]})
+
+    monkeypatch.setattr(litellm, "completion", fake_completion)
+    est = BaseSkribeEstimator(model="gpt-4", verbose=False, max_train_rows=1)
+    est._call_llm("hi")
+    assert "timeout" in captured
+    assert isinstance(captured["timeout"], (int, float))
+    assert captured["timeout"] > 0
+
+
 def test_sanitize_description_strips_and_cleans():
     assert sanitize_dataset_description("  hello  ") == "hello"
 

@@ -30,6 +30,7 @@ ALLOWED_STATE_FIELDS = {
     "web_search",
     "context_prepass",
     "vertex_location",
+    "llm_timeout",
     "target_name_",
     "feature_names_",
     "raw_python_code_",

@@ -186,6 +186,7 @@ class BaseSkribeEstimator(BaseEstimator):
         web_search: bool = False,
         context_prepass: bool = True,
         vertex_location: Optional[str] = None,
+        llm_timeout: float = 120,
     ):
         self.model = model
         self.verbose = verbose
@@ -194,6 +195,7 @@ class BaseSkribeEstimator(BaseEstimator):
         self.web_search = web_search
         self.context_prepass = context_prepass
         self.vertex_location = vertex_location
+        self.llm_timeout = llm_timeout
         self.predict_fn: Optional[Callable] = None
         self.target_name_: Optional[str] = None
         self.feature_names_: Optional[list] = None
@@ -214,6 +216,7 @@ class BaseSkribeEstimator(BaseEstimator):
             "web_search": self.web_search,
             "context_prepass": self.context_prepass,
             "vertex_location": self.vertex_location,
+            "llm_timeout": self.llm_timeout,
         }
 
     # used by GridSearchCV
@@ -290,7 +293,9 @@ class BaseSkribeEstimator(BaseEstimator):
 
         if web_search and model in self._WEB_SEARCH_RESPONSES_API_MODELS:
             # GPT-5+ uses the Responses API with tools=[{"type": "web_search"}].
-            response = litellm.responses(prompt, model, tools=[{"type": "web_search"}])
+            response = litellm.responses(
+                prompt, model, tools=[{"type": "web_search"}], timeout=self.llm_timeout
+            )
             content = ""
             for item in response.output:
                 if getattr(item, "type", None) == "message":
@@ -320,6 +325,7 @@ class BaseSkribeEstimator(BaseEstimator):
             response = litellm.completion(
                 model=model,
                 messages=[{"role": "user", "content": prompt}],
+                timeout=self.llm_timeout,
                 **kwargs,
             )
             choice = response.choices[0]

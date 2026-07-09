@@ -311,6 +311,56 @@ def test_context_prepass_states_true_label_mapping(monkeypatch):
     assert list(clf.classes_) == ["bird", "fish", "mammal"]
 
 
+def test_context_prepass_instructed_not_to_fabricate_semantics(monkeypatch):
+    """The pre-pass prompt must tell the LLM not to invent column/value
+    meanings when the raw description doesn't actually state them.
+
+    Reproduces the OpenML nursery (version 3) scenario: the raw DESCR is a
+    one-line stub ("4-class version of the original Nursery dataset") with
+    no column semantics at all, and the columns are anonymized (V1..V8).
+    Without this guardrail, the pre-pass LLM recognized "Nursery Database"
+    from outside knowledge and filled in the classic UCI Nursery schema
+    (parents/has_nurs/form/.../health) as if it were fact. The downstream
+    code-gen model then hard-coded rules against that fabricated mapping,
+    which turned out to not match this dataset's actual (unpublished, and
+    possibly differently-ordered) category encoding — accuracy collapsed
+    from ~0.79 to ~0.03 on a real benchmark run.
+
+    The prompt can't guarantee the LLM won't ever hallucinate, but it must
+    at least explicitly instruct against guessing from outside/general
+    knowledge of similarly-named datasets, and require an explicit "meaning
+    not stated" disclosure when the source description is silent.
+    """
+    clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
+    calls = []
+
+    def fake_call_llm(prompt, web_search=False):
+        calls.append(prompt)
+        if len(calls) == 1:
+            return "Not stated."  # pre-pass response
+        return SIMPLE_CODE  # fit + extend responses
+
+    monkeypatch.setattr(clf, "_call_llm", fake_call_llm)
+
+    X = pd.DataFrame(
+        {f"V{i}": ["1", "2", "3"] for i in range(1, 4)}
+    )
+    y = pd.Series(["1", "3", "4"])
+
+    clf.fit(X, y, dataset_description="4-class version of the original Nursery dataset.")
+
+    prepass_prompt = calls[0]
+    lowered = prepass_prompt.lower()
+    assert "do not invent" in lowered or "do not guess" in lowered, (
+        "Pre-pass prompt must explicitly instruct the LLM not to fabricate "
+        "column/value semantics from outside knowledge or the dataset's name."
+    )
+    assert "not stated" in lowered, (
+        "Pre-pass prompt must instruct an explicit 'meaning not stated' "
+        "disclosure when the raw description gives no real semantics."
+    )
+
+
 def test_fit_prompt_states_label_mapping_even_if_prepass_omits_it(monkeypatch):
     """The code-generation prompt (fit_prompt_) must state the literal
     code->label mapping for the target column, unconditionally — not just

@@ -22,7 +22,7 @@ Do NOT use any variable not defined below or present in the provided data. If yo
 
 All numeric feature values may be provided as strings or numbers. At the top of your function, coerce ALL numeric variables (e.g., weight_kg, lifespan_years, etc.) to float (or int for integer features) using float(x) or int(x) before calculations or comparisons.
 
-Your function must always return an integer class for any input, even if some features are unknown, missing, or out-of-vocabulary. Use a fallback/default prediction (such as 0) if no match is found.
+Your function must always return an integer class for any input, even if some features are unknown, missing, or out-of-vocabulary. Use a fallback/default prediction if no match is found — see the context block below for which training code to use as that default. Do not default to 0 unless the context block says 0 is the correct default; the codes are not ordered by frequency.
 
 For categorical inputs, aim for complete coverage of all plausible real-world values in any mapping you make — not just the values seen in the data sample.
 
@@ -74,6 +74,19 @@ class SkribeClassifier(ClassifierMixin, BaseSkribeEstimator):
         self._code_of_ = {label: i for i, label in label_names.items()}
         y_encoded = y.map(self._code_of_).astype(int)
         y_encoded.name = y.name
+        # The prompt template's generic "use a fallback (such as 0)" wording
+        # steers the LLM toward always defaulting to code 0 regardless of
+        # class frequency — 0 is just whichever class sorts first, not
+        # necessarily common. A rule-based/memorized-branch function's
+        # fallback executes on every unmatched input, so a bad fallback
+        # choice can dominate accuracy even when the matched-branch logic is
+        # fine (confirmed live: one cache case went from 0.03 to a
+        # replayed 0.54 purely by using the majority class as the fallback
+        # instead of code 0). Stating the true majority code removes the
+        # guesswork.
+        self.majority_class_ = (
+            int(y_encoded.value_counts().idxmax()) if len(y_encoded) else 0
+        )
 
         return super()._fit(
             X,
@@ -82,6 +95,7 @@ class SkribeClassifier(ClassifierMixin, BaseSkribeEstimator):
             synthetic_features=synthetic_features,
             dataset_description=dataset_description,
             label_names=label_names,
+            majority_class=self.majority_class_,
         )
 
     def predict(self, X) -> np.ndarray:

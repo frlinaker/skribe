@@ -46,6 +46,18 @@ def test_regressor_predict_without_fit():
         reg.predict(pd.DataFrame({"x": [1]}))
 
 
+def test_zero_row_fit_predict():
+    """median_target_ must not crash or become NaN on an empty y (mirrors
+    SkribeClassifier's test_zero_row_fit_predict for majority_class_)."""
+    X = pd.DataFrame(columns=["x"])
+    y = pd.Series(name="y", dtype=float)
+    reg = SkribeRegressor()
+    reg.fit(X, y)
+    assert reg.median_target_ == 0.0
+    preds = reg.predict(pd.DataFrame([{"x": 1}]))
+    assert isinstance(preds[0], float)
+
+
 def test_regressor_predict_invalid_type():
     reg = SkribeRegressor()
     # Fit with dummy data first

@@ -365,6 +365,7 @@ class BaseSkribeEstimator(BaseEstimator):
         context_block: Optional[str],
         label_names: Optional[dict] = None,
         target_name: Optional[str] = None,
+        majority_class: Optional[float] = None,
     ) -> str:
         """Build the prompt with {data} still present as a placeholder.
 
@@ -414,6 +415,38 @@ class BaseSkribeEstimator(BaseEstimator):
                 f"return the training code, never the original label) is: {mapping_str}."
             )
             context_block = f"{mapping_line}\n\n{context_block}" if context_block else mapping_line
+
+        if majority_class is not None:
+            # The template's generic "fallback such as 0" wording steers the
+            # LLM toward always defaulting to code 0 / value 0.0 regardless
+            # of what's actually common — 0 is just whichever class sorts
+            # first (or a fixed constant for regression), not necessarily
+            # representative. A function whose primary logic is a set of
+            # narrow/memorized branches executes its fallback on every
+            # unmatched input, so a bad fallback choice can dominate
+            # accuracy even when the matched-branch logic is otherwise fine.
+            if label_names is not None:
+                majority_code = int(majority_class)
+                majority_label = label_names.get(majority_code, majority_code)
+                label_note = (
+                    f' (original label "{majority_label}")'
+                    if str(majority_label) != str(majority_code)
+                    else ""
+                )
+                fallback_line = (
+                    f"If your function has a final fallback/default case for when no "
+                    f"other rule matches, use training code {majority_code}{label_note} — "
+                    f"this is the most common class in the training data, not "
+                    f"necessarily code 0."
+                )
+            else:
+                fallback_line = (
+                    f"If your function has a final fallback/default case for when no "
+                    f"other rule matches, use {majority_class!r} — this is a "
+                    f"representative typical value (median) of the training target, "
+                    f"not necessarily 0.0."
+                )
+            context_block = f"{fallback_line}\n\n{context_block}" if context_block else fallback_line
 
         if context_block:
             context_section = f"{CONTEXT_START}\n{context_block}\n{CONTEXT_END}\n\n"
@@ -555,6 +588,7 @@ class BaseSkribeEstimator(BaseEstimator):
         synthetic_features: Optional[list] = None,
         dataset_description: Optional[str] = None,
         label_names: Optional[dict] = None,
+        majority_class: Optional[float] = None,
     ):
         data, self.feature_names_, self.target_name_ = prepare_training_data(X, y)
         self.explanation_ = None  # invalidate any cached explanation from a prior fit
@@ -591,6 +625,7 @@ class BaseSkribeEstimator(BaseEstimator):
         prompt_template = self._build_prompt_without_data(
             prompt, synthetic_features, context_block,
             label_names=label_names, target_name=self.target_name_,
+            majority_class=majority_class,
         )
 
         headroom = _CONTEXT_HEADROOM

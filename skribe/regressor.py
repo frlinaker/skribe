@@ -19,7 +19,7 @@ Do NOT use any variable not defined below or present in the provided data. If yo
 
 All numeric feature values may be provided as strings or numbers. At the top of your function, coerce ALL numeric variables (e.g., weight_kg, area, age, etc.) to float (or int for integer features) using float(x) or int(x) before calculations or comparisons.
 
-Your function must always return a valid float or int prediction for any input, even if some features are unknown, missing, or out-of-vocabulary. Use a fallback/default prediction (such as 0.0) if no match is found.
+Your function must always return a valid float or int prediction for any input, even if some features are unknown, missing, or out-of-vocabulary. Use a fallback/default prediction if no match is found — see the context block below for a representative typical value to use as that default. Do not default to 0.0 unless the context block says 0.0 is a representative value for this target.
 
 For categorical inputs, aim for complete coverage of all plausible real-world values in any mapping you make — not just the values seen in the data sample. Always include a fallback/default for any unlisted keys.
 
@@ -60,12 +60,22 @@ class SkribeRegressor(RegressorMixin, BaseSkribeEstimator):
     def fit(
         self, X, y, synthetic_features=None, dataset_description=None
     ) -> "SkribeRegressor":
+        # See SkribeClassifier.fit()'s majority_class_ for the analogous
+        # classification fix — the prompt's generic "such as 0.0" fallback
+        # wording is often a nonsensical value for real regression targets
+        # (e.g. an age or price of 0.0). The median is a representative,
+        # outlier-robust typical value to fall back to instead.
+        y_series = pd.Series(y)
+        median = y_series.median() if len(y_series) else 0.0
+        self.median_target_ = float(median) if pd.notna(median) else 0.0
+
         return super()._fit(
             X,
             y,
             DEFAULT_REGRESSION_PROMPT_TEMPLATE,
             synthetic_features=synthetic_features,
             dataset_description=dataset_description,
+            majority_class=self.median_target_,
         )
 
     def predict(self, X) -> np.ndarray:

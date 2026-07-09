@@ -430,8 +430,6 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
     _LABEL_OVERRIDES = {
         "Gemini 2.5 Flash": {"dx": -22},
         "Gemini 2.5 Pro": {"dx": -10},
-        "GPT-5.5": {"bg": True},
-        "Gemini 3.5 Flash": {"bg": True},
     }
 
     _annotation_texts: list = []
@@ -495,11 +493,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                     fontsize=9.5,
                     color=color,
                     zorder=6,
-                    bbox=(
-                        dict(boxstyle="round,pad=0.15", fc="white", ec="none", alpha=0.85)
-                        if override.get("bg")
-                        else None
-                    ),
+                    bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="none", alpha=0.85),
                 )
                 _annotation_texts.append(txt)
 
@@ -554,11 +548,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                     fontsize=9.5,
                     color=color,
                     zorder=6,
-                    bbox=(
-                        dict(boxstyle="round,pad=0.15", fc="white", ec="none", alpha=0.85)
-                        if override.get("bg")
-                        else None
-                    ),
+                    bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="none", alpha=0.85),
                 )
                 _annotation_texts.append(txt)
 

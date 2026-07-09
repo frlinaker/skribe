@@ -186,6 +186,7 @@ class BaseSkribeEstimator(BaseEstimator):
         context_prepass: bool = True,
         vertex_location: Optional[str] = None,
         llm_timeout: float = 120,
+        reasoning_effort: Optional[str] = None,
     ):
         self.model = model
         self.verbose = verbose
@@ -195,6 +196,7 @@ class BaseSkribeEstimator(BaseEstimator):
         self.context_prepass = context_prepass
         self.vertex_location = vertex_location
         self.llm_timeout = llm_timeout
+        self.reasoning_effort = reasoning_effort
         self.predict_fn: Optional[Callable] = None
         self.target_name_: Optional[str] = None
         self.feature_names_: Optional[list] = None
@@ -217,6 +219,7 @@ class BaseSkribeEstimator(BaseEstimator):
             "context_prepass": self.context_prepass,
             "vertex_location": self.vertex_location,
             "llm_timeout": self.llm_timeout,
+            "reasoning_effort": self.reasoning_effort,
         }
 
     # used by GridSearchCV
@@ -288,14 +291,27 @@ class BaseSkribeEstimator(BaseEstimator):
         entry["citations"] = citations
         self.fit_log_.append(entry)
 
-    def _call_llm(self, prompt: str, web_search: bool = False) -> str:
+    def _call_llm(
+        self,
+        prompt: str,
+        web_search: bool = False,
+        reasoning_effort: Optional[str] = None,
+    ) -> str:
         """Call the language model via litellm, return the response text.
 
         The provider is selected by the model string, e.g. ``gpt-5.5`` (OpenAI),
         ``claude-sonnet-4-6`` (Anthropic), or ``ollama:llama3.1`` (local Ollama).
         API keys are read from the usual per-provider environment variables.
+
+        ``reasoning_effort`` (``"low"``/``"medium"``/``"high"``/etc, provider-
+        dependent) defaults to ``self.reasoning_effort`` when not overridden by
+        the caller — passed through to litellm uniformly; unsupported models
+        simply ignore it (litellm no-ops rather than erroring).
         """
         import litellm
+
+        if reasoning_effort is None:
+            reasoning_effort = self.reasoning_effort
 
         if self.verbose:
             logger.info("[Prompt to LLM]\n%s", prompt)
@@ -306,8 +322,15 @@ class BaseSkribeEstimator(BaseEstimator):
 
         if web_search and model in self._WEB_SEARCH_RESPONSES_API_MODELS:
             # GPT-5+ uses the Responses API with tools=[{"type": "web_search"}].
+            responses_kwargs: dict = {}
+            if reasoning_effort is not None:
+                responses_kwargs["reasoning_effort"] = reasoning_effort
             response = litellm.responses(
-                prompt, model, tools=[{"type": "web_search"}], timeout=self.llm_timeout
+                prompt,
+                model,
+                tools=[{"type": "web_search"}],
+                timeout=self.llm_timeout,
+                **responses_kwargs,
             )
             content = ""
             search_call_count = 0
@@ -343,6 +366,8 @@ class BaseSkribeEstimator(BaseEstimator):
                 )
         if self.vertex_location:
             kwargs["vertex_location"] = self.vertex_location
+        if reasoning_effort is not None:
+            kwargs["reasoning_effort"] = reasoning_effort
 
         try:
             response = litellm.completion(

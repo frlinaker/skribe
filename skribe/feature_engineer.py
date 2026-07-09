@@ -64,6 +64,7 @@ class SkribeFeatureEngineer(TransformerMixin, BaseSkribeEstimator):
         context_prepass: bool = True,
         vertex_location: str | None = None,
         llm_timeout: float = 120,
+        reasoning_effort: str | None = None,
     ):
         super().__init__(
             model=resolve_model(model),
@@ -74,6 +75,7 @@ class SkribeFeatureEngineer(TransformerMixin, BaseSkribeEstimator):
             context_prepass=context_prepass,
             vertex_location=vertex_location,
             llm_timeout=llm_timeout,
+            reasoning_effort=reasoning_effort,
         )
         self.new_feature_names_ = None
 

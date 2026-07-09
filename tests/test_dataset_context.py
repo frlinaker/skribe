@@ -602,3 +602,86 @@ def test_no_web_search_evidence_logged_when_web_search_disabled(monkeypatch):
     clf.fit(X, y)
 
     assert not [e for e in clf.fit_log_ if e.get("stage") == "web_search"]
+
+
+# ---------------------------------------------------------------------------
+# reasoning_effort
+# ---------------------------------------------------------------------------
+
+
+def test_reasoning_effort_none_by_default(monkeypatch):
+    """No reasoning_effort kwarg reaches litellm.completion when unset."""
+    clf = SkribeClassifier(model="gpt-5.5", verbose=False)
+
+    calls = []
+
+    def fake_completion(model, messages, **kwargs):
+        calls.append(kwargs)
+        resp = MagicMock()
+        resp.choices[0].message.content = SIMPLE_CODE
+        resp.choices[0].finish_reason = "stop"
+        return resp
+
+    monkeypatch.setattr("litellm.completion", fake_completion)
+
+    X = pd.DataFrame({"x": [1, 2]})
+    y = pd.Series([0, 1])
+    clf.fit(X, y)
+
+    assert all("reasoning_effort" not in c for c in calls)
+
+
+def test_reasoning_effort_passed_to_chat_completions(monkeypatch):
+    clf = SkribeClassifier(model="gpt-5.5", verbose=False, reasoning_effort="high")
+
+    calls = []
+
+    def fake_completion(model, messages, **kwargs):
+        calls.append(kwargs)
+        resp = MagicMock()
+        resp.choices[0].message.content = SIMPLE_CODE
+        resp.choices[0].finish_reason = "stop"
+        return resp
+
+    monkeypatch.setattr("litellm.completion", fake_completion)
+
+    X = pd.DataFrame({"x": [1, 2]})
+    y = pd.Series([0, 1])
+    clf.fit(X, y)
+
+    assert all(c.get("reasoning_effort") == "high" for c in calls)
+
+
+def test_reasoning_effort_passed_to_responses_api(monkeypatch):
+    clf = SkribeClassifier(
+        model="gpt-5.5", verbose=False, web_search=True, reasoning_effort="xhigh"
+    )
+
+    responses_calls = []
+
+    def fake_responses(prompt, model, **kwargs):
+        responses_calls.append(kwargs)
+        msg = MagicMock()
+        msg.type = "message"
+        content_part = MagicMock()
+        content_part.type = "output_text"
+        content_part.text = SIMPLE_CODE
+        content_part.annotations = []
+        msg.content = [content_part]
+        resp = MagicMock()
+        resp.output = [msg]
+        return resp
+
+    monkeypatch.setattr("litellm.responses", fake_responses)
+
+    X = pd.DataFrame({"x": [1, 2]})
+    y = pd.Series([0, 1])
+    clf.fit(X, y)
+
+    assert len(responses_calls) >= 1
+    assert responses_calls[0]["reasoning_effort"] == "xhigh"
+
+
+def test_reasoning_effort_get_params_roundtrip():
+    clf = SkribeClassifier(model="gpt-5.5", verbose=False, reasoning_effort="medium")
+    assert clf.get_params()["reasoning_effort"] == "medium"

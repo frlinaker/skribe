@@ -224,6 +224,39 @@ def test_fit_catches_typo_in_untriggered_branch(monkeypatch):
     assert "Did you mean" in prompts[1] and "ra" in prompts[1]
 
 
+def test_fit_feedback_includes_argument_types_for_attribute_errors(monkeypatch):
+    """An AttributeError from calling a string method on a non-string feature
+    (e.g. a numeric-looking column pandas parsed as int, then .lower()'d by
+    generated code that assumed it was always a string) should tell the LLM
+    which argument had the wrong runtime type -- regression for the cache
+    audit's "retry loop fails to converge within 3 attempts" finding
+    (hepatitis x gpt-4o-mini, lymph x gpt-4o-mini: 'float' object has no
+    attribute 'lower', 'int' object has no attribute 'isdigit'). The bare
+    AttributeError message names the type but not which feature carried it,
+    forcing the LLM to guess; surfacing "track_name=1979 (int)" points
+    straight at the fix."""
+    clf = SkribeClassifier(max_retries=1)
+    monkeypatch.setattr(clf, "_extend_code", lambda code: code)
+    prompts = []
+    outputs = iter(
+        [
+            "def predict(**features):\n"
+            "    return 1 if features['a'].lower().startswith('x') else 0\n",
+            "def predict(**features): return 1",
+        ]
+    )
+
+    def fake_llm(prompt, web_search=False):
+        prompts.append(prompt)
+        return next(outputs)
+
+    monkeypatch.setattr(clf, "_call_llm", fake_llm)
+    clf.fit(pd.DataFrame({"a": [1979]}), pd.Series([1], name="target"))
+    assert len(prompts) == 2
+    assert "'int' object has no attribute 'lower'" in prompts[1]
+    assert "a=1979" in prompts[1] and "(int)" in prompts[1]
+
+
 def test_fit_raises_after_exhausting_retries(monkeypatch):
     """When every attempt fails validation, the last error is surfaced."""
     clf = SkribeClassifier(max_retries=1)

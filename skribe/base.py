@@ -69,6 +69,16 @@ def _format_error_with_suggestion(e: Exception) -> str:
     failure. Retry feedback is far more actionable with it: telling the LLM
     "name 'ea' is not defined. Did you mean: 'ra'?" points straight at the
     fix, instead of just "name 'ea' is not defined."
+
+    Also appends the runtime types of the failing call's arguments when the
+    innermost frame is a generated predict/transform function (recognized
+    by its universal ``features`` kwarg-dict local). This targets the class
+    of bug behind "retry loop fails to converge within 3 attempts"
+    (e.g. AttributeError: 'int' object has no attribute 'lower' on a
+    numeric-looking column pandas parsed as int) -- the bare message names
+    the wrong type but not which feature carried it, forcing the LLM to
+    guess across every column instead of fixing the one that's actually
+    mistyped.
     """
     if e.__traceback__ is None:
         return str(e)
@@ -76,7 +86,16 @@ def _format_error_with_suggestion(e: Exception) -> str:
     # full traceback (which does frame introspection) computes it.
     full = "".join(traceback.format_exception(type(e), e, e.__traceback__))
     lines = full.strip().splitlines()
-    return lines[-1] if lines else str(e)
+    message = lines[-1] if lines else str(e)
+
+    tb = e.__traceback__
+    while tb.tb_next is not None:
+        tb = tb.tb_next
+    features = tb.tb_frame.f_locals.get("features")
+    if isinstance(features, dict) and isinstance(e, (AttributeError, TypeError)):
+        args_repr = ", ".join(f"{k}={v!r} ({type(v).__name__})" for k, v in features.items())
+        message += f"\nArguments passed to predict(): {args_repr}"
+    return message
 
 
 def _check_unresolved_names(code: str) -> None:

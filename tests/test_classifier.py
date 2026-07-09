@@ -403,6 +403,35 @@ def test_safe_exec_fn_non_number_string():
     assert safe_exec_fn(fn, {"val": "not_a_number"}) == 0
 
 
+def test_safe_exec_fn_preserves_numeric_looking_text_feature():
+    """A free-text feature that happens to look numeric (e.g. a song title
+    like "1979") must reach the generated function as the original string,
+    not get silently coerced to an int -- regression for the spotify-genre
+    'int' object has no attribute 'lower' bug found via the cache audit,
+    where safe_exec_fn's numeric-string coercion ran unconditionally on
+    every string feature, including free-text ones."""
+
+    def fn(**features):
+        return 1 if features["track_name"].lower().startswith("1") else 0
+
+    result = safe_exec_fn(
+        fn, {"track_name": "1979", "track_artist": "The Smashing Pumpkins"}, default=99
+    )
+    assert result == 1  # must NOT hit the except-block fallback of 99
+
+
+def test_safe_exec_fn_still_coerces_numeric_string_when_fn_needs_it():
+    """Existing safety net: a feature that's semantically numeric but arrived
+    as a string, and whose function assumes it's already numeric, should
+    still be coerced -- this is the fallback path, exercised only when
+    calling the function with the raw string fails."""
+
+    def fn(**features):
+        return features["age"] + 1  # would TypeError on a str without coercion
+
+    assert safe_exec_fn(fn, {"age": "5"}, output_type=int, default=0) == 6
+
+
 # ---------------------------------------------------------------------------
 # Signature and class-coverage validation (regression for commit 20ad44d)
 # ---------------------------------------------------------------------------

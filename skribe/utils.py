@@ -106,24 +106,15 @@ def make_predict_fn(code: str, fn_names=("predict", "transform")):
     )
 
 
-def safe_exec_fn(
-    fn: Callable,
-    features: Dict[str, Any],
-    output_type: Type = int,
-    default: Any = 0,
-    label: str = "PredictFn",
-) -> Any:
-    """
-    Safely executes a function with cleaned features, coercing output to desired type.
-    """
+def _coerce_numeric_strings(features: Dict[str, Any], output_type: Type) -> Dict[str, Any]:
+    """Best-effort: turn number-looking strings into int/float, for callers that
+    forgot to coerce a semantically-numeric feature themselves. Used only as a
+    fallback (see safe_exec_fn) since it can't distinguish a numeric column
+    represented as text from a free-text column that merely looks numeric
+    (e.g. a song title like "1979")."""
     clean = {}
     for k, v in features.items():
-        if v is None:
-            clean[k] = v
-            continue
-        if isinstance(v, (float, int)):
-            clean[k] = v
-        elif isinstance(v, str):
+        if isinstance(v, str):
             try:
                 # Only convert to float if there's a dot, else int
                 if "." in v:
@@ -135,7 +126,35 @@ def safe_exec_fn(
                 clean[k] = v
         else:
             clean[k] = v
+    return clean
+
+
+def safe_exec_fn(
+    fn: Callable,
+    features: Dict[str, Any],
+    output_type: Type = int,
+    default: Any = 0,
+    label: str = "PredictFn",
+) -> Any:
+    """
+    Safely executes a function with the given features, coercing output to desired type.
+
+    Features are passed through as-is first -- the generated function is
+    prompted to do its own numeric coercion, so an unconditional pre-coercion
+    here would corrupt free-text features that happen to look numeric (e.g. a
+    song title of "1979" would become the int 1979, breaking any string
+    method the generated code calls on it). If the first call raises, retry
+    once with number-looking strings coerced to int/float, as a safety net for
+    generated code that assumed a semantically-numeric feature would already
+    be numeric.
+    """
     try:
+        res = fn(**features)
+        return output_type(res) if res is not None else default
+    except Exception:
+        pass
+    try:
+        clean = _coerce_numeric_strings(features, output_type)
         res = fn(**clean)
         return output_type(res) if res is not None else default
     except Exception as e:

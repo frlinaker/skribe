@@ -283,7 +283,7 @@ def build_summary_df(results: list[dict]) -> pd.DataFrame:
         meta = model_meta.get(model_id, {})
         llm_label = meta.get("label", model_id)
 
-        if "skribe" in r and "error" not in r["skribe"]:
+        if "skribe" in r:
             m = r["skribe"]
             web_search = meta.get("web_search", False)
             row = {
@@ -299,8 +299,18 @@ def build_summary_df(results: list[dict]) -> pd.DataFrame:
                 "n_cols": r.get("n_cols"),
                 "n_classes": r.get("n_classes"),
             }
-            row.update({k: v for k, v in m.items() if k not in ("fit_time_s",)})
-            row["fit_time_s"] = m.get("fit_time_s")
+            if "error" in m:
+                # A run that errored out (timeout, rate-limit, etc.) is
+                # scored as a hard 0.0 rather than silently dropped — a
+                # model that can't even produce a classifier for a dataset
+                # must be penalized in aggregate charts, not excused from
+                # the average by being absent from it.
+                row["accuracy"] = 0.0
+                row["error"] = m["error"]
+                row["fit_time_s"] = None
+            else:
+                row.update({k: v for k, v in m.items() if k not in ("fit_time_s",)})
+                row["fit_time_s"] = m.get("fit_time_s")
             rows.append(row)
 
     return pd.DataFrame(rows)

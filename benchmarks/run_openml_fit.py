@@ -215,9 +215,17 @@ def run_one_skribe(
         else None
     )
     if cache_file and cache_file.exists() and not skip_cache_read:
-        print(f"{tag} cached — skipping", flush=True)
         with open(cache_file) as f:
-            return json.load(f)
+            cached = json.load(f)
+        # A cached record from a run that errored out (timeout, rate-limit,
+        # etc.) is stored with accuracy=0.0 so it counts against the model in
+        # aggregate charts (see plot_progression) instead of silently
+        # dropping out of the average — but it must still be retried on the
+        # next run rather than treated as a permanent result.
+        if not (isinstance(cached.get("skribe"), dict) and cached["skribe"].get("error")):
+            print(f"{tag} cached — skipping", flush=True)
+            return cached
+        print(f"{tag} cached result was a failure ({cached['skribe']['error']!r}) — retrying", flush=True)
 
     openml_name, version = spec[0], spec[1]
     csv_path = spec[2] if len(spec) > 2 else None
@@ -335,12 +343,20 @@ def run_one_skribe(
         print(f"{tag} FAILED after {elapsed:.1f}s: {e}", flush=True)
         result["skribe"] = {"error": str(e)}
 
-    pl = result.get("skribe", {})
-    if cache_file and not (isinstance(pl, dict) and pl.get("error")):
+    # Cache failures too (accuracy=0.0, see build_summary_df) so aggregate
+    # charts penalize a model that can't even produce a classifier for this
+    # dataset, instead of silently omitting it from the average. The
+    # cache-read path above detects the "error" key and retries these on the
+    # next run rather than treating them as a permanent result.
+    if cache_file:
         cache_dir.mkdir(parents=True, exist_ok=True)
         with open(cache_file, "w") as f:
             json.dump(result, f, indent=2, default=str)
-        print(f"{tag} cached → {cache_file.name}", flush=True)
+        pl = result.get("skribe", {})
+        if isinstance(pl, dict) and pl.get("error"):
+            print(f"{tag} cached failure → {cache_file.name}", flush=True)
+        else:
+            print(f"{tag} cached → {cache_file.name}", flush=True)
 
     return result
 

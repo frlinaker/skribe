@@ -156,6 +156,40 @@ def test_fit_feedback_includes_error(monkeypatch):
     assert "kaboom" in prompts[1]
 
 
+def test_fit_feedback_includes_name_suggestion_for_typos(monkeypatch):
+    """A NameError from a typo'd variable (e.g. 'ea' instead of the real loop
+    variable 'ra') should feed back Python's own "Did you mean: 'ra'?"
+    suggestion to the LLM, not just the bare "name 'ea' is not defined" --
+    regression for the cache audit's finding that generated code sometimes
+    has exactly this class of typo (spotify-genre x gemini-3.5-flash's
+    'ea'/'ra' mixup, hepatitis x gpt-4o-mini's 'antiviral'/'antivirals'
+    mixup), which a plain NameError message doesn't help the LLM self-correct
+    as directly as the interpreter's own suggestion would."""
+    clf = SkribeClassifier(max_retries=1)
+    monkeypatch.setattr(clf, "_extend_code", lambda code: code)
+    prompts = []
+    outputs = iter(
+        [
+            "def predict(**features):\n"
+            "    ra = features.get('a')\n"
+            "    if ea == ra:\n"  # typo: should be 'ra == ra' or similar
+            "        return 1\n"
+            "    return 0\n",
+            "def predict(**features): return 1",
+        ]
+    )
+
+    def fake_llm(prompt, web_search=False):
+        prompts.append(prompt)
+        return next(outputs)
+
+    monkeypatch.setattr(clf, "_call_llm", fake_llm)
+    clf.fit(pd.DataFrame({"a": [1]}), pd.Series([1], name="target"))
+    assert len(prompts) == 2
+    assert "ea" in prompts[1] and "is not defined" in prompts[1]
+    assert "Did you mean" in prompts[1] and "ra" in prompts[1]
+
+
 def test_fit_raises_after_exhausting_retries(monkeypatch):
     """When every attempt fails validation, the last error is surfaced."""
     clf = SkribeClassifier(max_retries=1)

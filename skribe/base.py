@@ -2,6 +2,7 @@ import logging
 import os
 import re
 import time
+import traceback
 import warnings
 
 from typing import Callable, Optional
@@ -56,6 +57,23 @@ _CONTEXT_LIMIT_RE = re.compile(
     r"(?:configured limit of|maximum context length is) (\d[\d,]*)\s*tokens",
     re.IGNORECASE,
 )
+
+
+def _format_error_with_suggestion(e: Exception) -> str:
+    """str(e) drops Python's own "Did you mean: 'x'?" suggestion for typo'd
+    names (NameError/AttributeError) -- that suggestion is only computed by
+    the traceback formatter, which inspects the frame at the point of
+    failure. Retry feedback is far more actionable with it: telling the LLM
+    "name 'ea' is not defined. Did you mean: 'ra'?" points straight at the
+    fix, instead of just "name 'ea' is not defined."
+    """
+    if e.__traceback__ is None:
+        return str(e)
+    # format_exception_only alone doesn't include the suggestion -- only the
+    # full traceback (which does frame introspection) computes it.
+    full = "".join(traceback.format_exception(type(e), e, e.__traceback__))
+    lines = full.strip().splitlines()
+    return lines[-1] if lines else str(e)
 
 
 def resolve_model(model: Optional[str]) -> str:
@@ -730,12 +748,13 @@ class BaseSkribeEstimator(BaseEstimator):
                 self._validate_predict_fn(fn, validation_rows, validation_labels)
             except Exception as e:
                 last_error = e
+                error_detail = _format_error_with_suggestion(e)
                 logger.warning(
-                    f"[Validation] Attempt {attempt + 1}/{self.max_retries + 1} failed: {e}"
+                    f"[Validation] Attempt {attempt + 1}/{self.max_retries + 1} failed: {error_detail}"
                 )
                 feedback = (
                     "\n\nThe Python function you previously returned failed validation "
-                    f"with this error:\n{e}\n\n"
+                    f"with this error:\n{error_detail}\n\n"
                     "Fix the problem and return only the corrected, valid Python code."
                 )
                 if attempt < self.max_retries:

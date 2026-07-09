@@ -332,7 +332,8 @@ def run_one_skribe(
         result["skribe"]["fit_time_s"] = round(fit_elapsed, 2)
         result["skribe"]["prepass_time_s"] = round(_prepass_time[0], 2)
         result["skribe"]["predict_time_s"] = round(predict_elapsed, 4)
-        result["skribe"]["generated_code"] = clf.raw_python_code_
+        result["skribe"]["generated_code"] = clf.python_code_
+        result["skribe"]["generated_code_raw"] = clf.raw_python_code_
         result["skribe"]["fit_prompt"] = getattr(clf, "fit_prompt_", None)
         result["skribe"]["context_prepass_prompt"] = getattr(clf, "context_prepass_prompt_", None)
         result["skribe"]["context_summary"] = getattr(clf, "context_summary_", None)

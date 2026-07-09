@@ -49,7 +49,9 @@ def test_cached_generated_code_matches_scored_code(monkeypatch, tiny_csv_spec):
     monkeypatch.setattr(
         SkribeClassifier, "_call_llm", lambda self, prompt, web_search=False: raw_code
     )
-    monkeypatch.setattr(SkribeClassifier, "_extend_code", lambda self, code: extended_code)
+    monkeypatch.setattr(
+        SkribeClassifier, "_extend_code", lambda self, code, web_search=False: extended_code
+    )
 
     result = run_openml_fit.run_one_skribe(
         dataset="tiny",
@@ -78,7 +80,7 @@ def test_cached_result_has_explicit_status_on_success(monkeypatch, tiny_csv_spec
         "_call_llm",
         lambda self, prompt, web_search=False: "def predict(**features): return 0",
     )
-    monkeypatch.setattr(SkribeClassifier, "_extend_code", lambda self, code: code)
+    monkeypatch.setattr(SkribeClassifier, "_extend_code", lambda self, code, web_search=False: code)
 
     result = run_openml_fit.run_one_skribe(
         dataset="tiny",
@@ -101,7 +103,7 @@ def test_cached_result_has_explicit_status_on_failure(monkeypatch, tiny_csv_spec
         "_call_llm",
         lambda self, prompt, web_search=False: "def predict(**features): raise ValueError('nope')",
     )
-    monkeypatch.setattr(SkribeClassifier, "_extend_code", lambda self, code: code)
+    monkeypatch.setattr(SkribeClassifier, "_extend_code", lambda self, code, web_search=False: code)
 
     result = run_openml_fit.run_one_skribe(
         dataset="tiny",
@@ -146,7 +148,7 @@ def test_cached_result_includes_fit_log(monkeypatch, tiny_csv_spec):
     monkeypatch.setattr(
         SkribeClassifier, "_call_llm", lambda self, prompt, web_search=False: next(outputs)
     )
-    monkeypatch.setattr(SkribeClassifier, "_extend_code", lambda self, code: code)
+    monkeypatch.setattr(SkribeClassifier, "_extend_code", lambda self, code, web_search=False: code)
 
     result = run_openml_fit.run_one_skribe(
         dataset="tiny",
@@ -174,7 +176,7 @@ def test_cached_failure_includes_fit_log(monkeypatch, tiny_csv_spec):
         "_call_llm",
         lambda self, prompt, web_search=False: "def predict(**features): raise ValueError('nope')",
     )
-    monkeypatch.setattr(SkribeClassifier, "_extend_code", lambda self, code: code)
+    monkeypatch.setattr(SkribeClassifier, "_extend_code", lambda self, code, web_search=False: code)
 
     result = run_openml_fit.run_one_skribe(
         dataset="tiny",

@@ -407,7 +407,7 @@ def test_web_search_passed_to_call_llm(monkeypatch):
     clf = SkribeClassifier(model="gpt-5.5", verbose=False, web_search=True)
     captured = []
 
-    def fake_call_llm(prompt, web_search=False):
+    def fake_call_llm(prompt, web_search=False, reasoning_effort=None):
         captured.append(web_search)
         return SIMPLE_CODE
 
@@ -417,9 +417,12 @@ def test_web_search_passed_to_call_llm(monkeypatch):
     y = pd.Series([0, 1])
     clf.fit(X, y)
 
-    # First call (fit) should have web_search=True; extend call should not.
-    assert captured[0] is True
-    assert all(not v for v in captured[1:])
+    # Code-gen's first attempt and the extend pass's first attempt both get
+    # web_search=True (expanding categorical mappings is a lookup task web
+    # search directly helps with) -- everything else stays False.
+    assert captured[0] is True  # code-gen, attempt 0
+    assert captured[1] is True  # extend, attempt 0
+    assert all(not v for v in captured[2:])
 
 
 def test_web_search_false_by_default(monkeypatch):
@@ -685,3 +688,32 @@ def test_reasoning_effort_passed_to_responses_api(monkeypatch):
 def test_reasoning_effort_get_params_roundtrip():
     clf = SkribeClassifier(model="gpt-5.5", verbose=False, reasoning_effort="medium")
     assert clf.get_params()["reasoning_effort"] == "medium"
+
+
+def test_web_search_reenabled_on_final_retry_attempt(monkeypatch):
+    """A retry caused by a knowledge gap (e.g. bad value mapping) benefits from
+    a lookup exactly as much as the first attempt -- so the last retry should
+    get web_search=True again, even though middle retries don't. Tests
+    _generate_code directly to avoid the extend pass's own _call_llm calls
+    (also web_search-aware) muddying which call is which."""
+    clf = SkribeClassifier(model="gpt-5.5", verbose=False, max_retries=2)
+    monkeypatch.setattr(clf, "_extend_code", lambda code, web_search=False: code)
+
+    captured = []
+    responses = [
+        "def predict(**f): return undefined_name",  # attempt 0: NameError on validate
+        "def predict(**f): return also_undefined",  # attempt 1: NameError on validate
+        SIMPLE_CODE,  # attempt 2 (final): valid
+    ]
+
+    def fake_call_llm(prompt, web_search=False, reasoning_effort=None):
+        captured.append(web_search)
+        return responses[len(captured) - 1]
+
+    monkeypatch.setattr(clf, "_call_llm", fake_call_llm)
+
+    clf._generate_code("base prompt", [], [], web_search=True)
+
+    # attempt 0 (index 0) and the final attempt (index 2) get web_search=True;
+    # the middle retry (index 1) does not.
+    assert captured == [True, False, True]

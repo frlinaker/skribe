@@ -911,9 +911,18 @@ class BaseSkribeEstimator(BaseEstimator):
         last_error: Optional[Exception] = None
         # One initial attempt plus up to max_retries corrective re-tries.
         for attempt in range(self.max_retries + 1):
-            # Web search only on the first attempt; retries don't need it.
+            # Web search on the first attempt and the final retry: a retry
+            # triggered by a missing-fact problem (wrong constant, bad value
+            # mapping, unresolved name) is exactly the case a lookup helps
+            # most, so the last attempt shouldn't go in blind -- but every
+            # attempt would just add latency without giving the model new
+            # information most of the time (most retries are plain logic
+            # bugs, not knowledge gaps).
             # _OutputTruncated propagates immediately to _fit for data reduction.
-            code = self._call_llm(base_prompt + feedback, web_search=web_search and attempt == 0)
+            is_last_attempt = attempt == self.max_retries
+            code = self._call_llm(
+                base_prompt + feedback, web_search=web_search and (attempt == 0 or is_last_attempt)
+            )
             if not isinstance(code, str):
                 code = str(code)
             logger.info(f"[LLM Output]\n{code}")
@@ -924,7 +933,7 @@ class BaseSkribeEstimator(BaseEstimator):
                 if not code.strip():
                     raise ValueError("No code to exec from LLM output.")
                 raw_code = code
-                extended_code = self._extend_code(code)
+                extended_code = self._extend_code(code, web_search=web_search)
                 _check_unresolved_names(extended_code)
                 fn = make_predict_fn(extended_code)
                 self._validate_predict_fn(fn, validation_rows, validation_labels)
@@ -982,12 +991,20 @@ class BaseSkribeEstimator(BaseEstimator):
 
     _EXTEND_MAX_RETRIES = 5
 
-    def _extend_code(self, code: str) -> str:
+    def _extend_code(self, code: str, web_search: bool = False) -> str:
         """Expand categorical mappings in the generated code via a second LLM pass.
 
         Validates the result and retries up to _EXTEND_MAX_RETRIES times when the
         LLM returns broken code, feeding the error back each time.  Falls back to
         the original code if all attempts fail.
+
+        ``web_search`` lets the model look up real-world category values (e.g.
+        country names, species) it may not know from training data alone --
+        this is the primary use case web search is suited for, since expanding
+        a lookup table is exactly a factual-recall task. Only forwarded on the
+        first attempt, matching ``_generate_code``'s pattern: retries here are
+        almost always caused by broken Python syntax from the previous
+        attempt, not missing facts, so a repeat search would just add latency.
         """
         logger.info("[Post-Process] Expanding code via second LLM pass...")
         base_prompt = (
@@ -1001,7 +1018,9 @@ class BaseSkribeEstimator(BaseEstimator):
         feedback = ""
         for attempt in range(self._EXTEND_MAX_RETRIES):
             try:
-                refined_code = self._call_llm(base_prompt + feedback)
+                refined_code = self._call_llm(
+                    base_prompt + feedback, web_search=web_search and attempt == 0
+                )
                 refined_code = extract_python_code(str(refined_code))
                 compile(refined_code, "<extend>", "exec")
                 make_predict_fn(refined_code)

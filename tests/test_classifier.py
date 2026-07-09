@@ -118,7 +118,7 @@ def test_construction_does_not_require_api_key(monkeypatch):
 def test_fit_retries_then_succeeds(monkeypatch):
     """A function that errors when run on the sample is retried, then accepted."""
     clf = SkribeClassifier(max_retries=2)
-    monkeypatch.setattr(clf, "_extend_code", lambda code: code)
+    monkeypatch.setattr(clf, "_extend_code", lambda code, web_search=False: code)
     outputs = iter(
         [
             "def predict(**features): raise ValueError('boom')",  # compiles, fails at run
@@ -136,7 +136,7 @@ def test_fit_retries_then_succeeds(monkeypatch):
 def test_fit_feedback_includes_error(monkeypatch):
     """The retry prompt carries the previous error message back to the LLM."""
     clf = SkribeClassifier(max_retries=1)
-    monkeypatch.setattr(clf, "_extend_code", lambda code: code)
+    monkeypatch.setattr(clf, "_extend_code", lambda code, web_search=False: code)
     prompts = []
     outputs = iter(
         [
@@ -164,7 +164,7 @@ def test_fit_records_retry_history_on_success(monkeypatch):
     Regression for the cache audit's fit-time errors being visible only in
     ephemeral log files, invisible in the cached result JSON."""
     clf = SkribeClassifier(max_retries=1)
-    monkeypatch.setattr(clf, "_extend_code", lambda code: code)
+    monkeypatch.setattr(clf, "_extend_code", lambda code, web_search=False: code)
     outputs = iter(
         [
             "def predict(**features): raise ValueError('kaboom')",
@@ -186,7 +186,7 @@ def test_fit_records_retry_history_on_exhaustion(monkeypatch):
     exception's estimator state so a caller that catches the exception can
     still recover what happened, not just the final error string."""
     clf = SkribeClassifier(max_retries=1)
-    monkeypatch.setattr(clf, "_extend_code", lambda code: code)
+    monkeypatch.setattr(clf, "_extend_code", lambda code, web_search=False: code)
     monkeypatch.setattr(
         clf,
         "_call_llm",
@@ -210,7 +210,7 @@ def test_fit_feedback_includes_name_suggestion_for_typos(monkeypatch):
     mixup), which a plain NameError message doesn't help the LLM self-correct
     as directly as the interpreter's own suggestion would."""
     clf = SkribeClassifier(max_retries=1)
-    monkeypatch.setattr(clf, "_extend_code", lambda code: code)
+    monkeypatch.setattr(clf, "_extend_code", lambda code, web_search=False: code)
     prompts = []
     outputs = iter(
         [
@@ -244,7 +244,7 @@ def test_fit_catches_typo_in_untriggered_branch(monkeypatch):
     to names that are never bound anywhere in the function catches this
     regardless of which branch the validation rows exercise."""
     clf = SkribeClassifier(max_retries=1)
-    monkeypatch.setattr(clf, "_extend_code", lambda code: code)
+    monkeypatch.setattr(clf, "_extend_code", lambda code, web_search=False: code)
     prompts = []
     outputs = iter(
         [
@@ -280,7 +280,7 @@ def test_fit_feedback_includes_argument_types_for_attribute_errors(monkeypatch):
     forcing the LLM to guess; surfacing "track_name=1979 (int)" points
     straight at the fix."""
     clf = SkribeClassifier(max_retries=1)
-    monkeypatch.setattr(clf, "_extend_code", lambda code: code)
+    monkeypatch.setattr(clf, "_extend_code", lambda code, web_search=False: code)
     prompts = []
     outputs = iter(
         [
@@ -304,7 +304,7 @@ def test_fit_feedback_includes_argument_types_for_attribute_errors(monkeypatch):
 def test_fit_raises_after_exhausting_retries(monkeypatch):
     """When every attempt fails validation, the last error is surfaced."""
     clf = SkribeClassifier(max_retries=1)
-    monkeypatch.setattr(clf, "_extend_code", lambda code: code)
+    monkeypatch.setattr(clf, "_extend_code", lambda code, web_search=False: code)
     monkeypatch.setattr(
         clf,
         "_call_llm",
@@ -578,7 +578,7 @@ def test_fit_rejects_positional_arg_missing_feature(monkeypatch):
     clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, max_retries=0)
     # Returns a function that only accepts 'age', missing 'income'
     monkeypatch.setattr(clf, "_call_llm", lambda p, web_search=False: "def predict(age): return 0")
-    monkeypatch.setattr(clf, "_extend_code", lambda code: code)
+    monkeypatch.setattr(clf, "_extend_code", lambda code, web_search=False: code)
 
     with pytest.raises(ValueError, match="missing expected feature arguments"):
         clf.fit(
@@ -595,7 +595,7 @@ def test_fit_kwargs_signature_passes_validation(monkeypatch):
         "_call_llm",
         lambda p, web_search=False: "def predict(**features): return int(features.get('a', 0) > 10)",
     )
-    monkeypatch.setattr(clf, "_extend_code", lambda code: code)
+    monkeypatch.setattr(clf, "_extend_code", lambda code, web_search=False: code)
 
     X = pd.DataFrame({"a": list(range(20))})
     y = pd.Series([0] * 10 + [1] * 10)

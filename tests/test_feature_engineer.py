@@ -27,7 +27,7 @@ GOOD_CODE = (
 
 def _mock(fe, code=GOOD_CODE):
     fe._call_llm = lambda prompt, web_search=False: code
-    fe._extend_code = lambda c: c
+    fe._extend_code = lambda c, web_search=False: c
     return fe
 
 
@@ -304,7 +304,7 @@ def test_prompt_fe_dataset_stats_injected(Xy):
         captured.append(prompt),
         GOOD_CODE,
     )[1]
-    fe._extend_code = lambda c: c
+    fe._extend_code = lambda c, web_search=False: c
     stats = {
         "n_rows": 4,
         "logreg_cv_accuracy": "0.750",

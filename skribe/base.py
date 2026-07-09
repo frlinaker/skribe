@@ -49,9 +49,13 @@ class _ContextWindowExceeded(Exception):
         self.real_max_input_tokens = real_max_input_tokens
 
 
-# Matches OpenAI's context-window error text, e.g.:
-#   "Input tokens exceed the configured limit of 272000 tokens."
-_CONTEXT_LIMIT_RE = re.compile(r"configured limit of (\d[\d,]*)\s*tokens", re.IGNORECASE)
+# Matches known provider context-window error phrasings, e.g.:
+#   "Input tokens exceed the configured limit of 272000 tokens."           (Responses API)
+#   "This model's maximum context length is 128000 tokens."               (Chat Completions)
+_CONTEXT_LIMIT_RE = re.compile(
+    r"(?:configured limit of|maximum context length is) (\d[\d,]*)\s*tokens",
+    re.IGNORECASE,
+)
 
 
 def resolve_model(model: Optional[str]) -> str:
@@ -278,12 +282,24 @@ class BaseSkribeEstimator(BaseEstimator):
         """
         import pandas as pd
 
-        # Build a value-summary: all unique values per column
+        # Build a value-summary: unique values per column, capped so a single
+        # high-cardinality or near-continuous column (e.g. free-text track
+        # names, raw timestamps) can't blow up the prompt past the model's
+        # context window — this is independent of row count, since such
+        # columns keep most of their distinct values even after sampling.
+        _MAX_UNIQUE_PREVIEW = 20
         value_lines = []
         for col in feature_names:
             uniq = sample_df[col].dropna().unique()
             preview = sorted(str(v) for v in uniq)
-            value_lines.append(f"  {col}: {', '.join(preview)}")
+            if len(preview) > _MAX_UNIQUE_PREVIEW:
+                shown = preview[:_MAX_UNIQUE_PREVIEW]
+                value_lines.append(
+                    f"  {col}: {', '.join(shown)}, "
+                    f"... and {len(preview) - _MAX_UNIQUE_PREVIEW:,} more unique values"
+                )
+            else:
+                value_lines.append(f"  {col}: {', '.join(preview)}")
         value_summary = "\n".join(value_lines)
 
         target_codes = sample_df[target_name].dropna().unique()
@@ -371,11 +387,21 @@ class BaseSkribeEstimator(BaseEstimator):
             str(code) != str(label) for code, label in label_names.items()
         )
         if needs_mapping_line:
-            mapping_str = ", ".join(f"{code}={label}" for code, label in sorted(label_names.items()))
+            # Quote the original label and keep the training code bare, so a
+            # label that happens to itself look like a small integer (e.g.
+            # OpenML datasets that store category codes as the strings '1',
+            # '2') can never be visually confused with the training code —
+            # otherwise the LLM tends to write `return 1` / `return 2` (the
+            # quoted-looking label) instead of `return 0` / `return 1` (the
+            # actual code), which silently inverts/scrambles every prediction.
+            mapping_str = ", ".join(
+                f'{code}="{label}"' for code, label in sorted(label_names.items())
+            )
             mapping_line = (
-                f"The {target_name or 'target'} column in the training data below is integer-coded. "
-                f"The TRUE meaning of each code is: {mapping_str}. "
-                "Use exactly this mapping — do not infer or guess a different one."
+                f"The {target_name or 'target'} column in the training data below has been "
+                f"encoded to integer training codes 0..{len(label_names) - 1}. The original "
+                f"dataset label for each code (for context only — your function must still "
+                f"return the training code, never the original label) is: {mapping_str}."
             )
             context_block = f"{mapping_line}\n\n{context_block}" if context_block else mapping_line
 

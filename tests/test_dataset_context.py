@@ -120,6 +120,39 @@ def test_no_description_prompt_unchanged(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+def test_context_prepass_caps_high_cardinality_column_preview(monkeypatch):
+    """A column with many unique values must not blow up the pre-pass prompt.
+
+    Reproduces a real failure: fitting on the spotify-genre dataset (track_name
+    has 23,449 unique values across 26,229 rows) sent a 391,893-token pre-pass
+    prompt to gpt-4o, which only has a 128,000-token window — the pre-pass
+    call failed every time. _build_dataset_context() listed every unique value
+    per column with no cap, so a single high-cardinality (or near-continuous)
+    column dominates prompt size regardless of how many training rows are used.
+    """
+    clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
+    calls = []
+
+    def fake_call_llm(prompt, web_search=False):
+        calls.append(prompt)
+        if len(calls) == 1:
+            return "This is a clean summary."  # pre-pass response
+        return SIMPLE_CODE
+
+    monkeypatch.setattr(clf, "_call_llm", fake_call_llm)
+
+    # 500 distinct "track names" — far more than any reasonable cap.
+    track_names = [f"track_{i}" for i in range(500)]
+    X = pd.DataFrame({"track_name": track_names})
+    y = pd.Series([0, 1] * 250)
+    clf.fit(X, y, dataset_description="Track genre classification.")
+
+    prepass_prompt = calls[0]
+    # Only a bounded preview of the 500 values should appear, not all of them.
+    assert "track_499" not in prepass_prompt
+    assert "more unique values" in prepass_prompt
+
+
 def test_context_prepass_fires_before_fit(monkeypatch):
     """When context_prepass=True and dataset_description is given, an extra LLM
     call is made before the main fit call, and context_summary_ is set."""
@@ -311,11 +344,39 @@ def test_fit_prompt_states_label_mapping_even_if_prepass_omits_it(monkeypatch):
 
     fit_prompt = clf.fit_prompt_
     for code, label in enumerate(["amphibian", "bird", "fish", "mammal"]):
-        assert f"{code}={label}" in fit_prompt, (
+        assert f'{code}="{label}"' in fit_prompt, (
             f"fit_prompt_ never states the explicit mapping {code}={label!r} — "
             "the code-generation LLM only sees bare integers in the training "
             "data and has nothing authoritative to tie them back to real labels."
         )
+
+
+def test_fit_prompt_mapping_line_unambiguous_when_labels_look_numeric(monkeypatch):
+    """When the original dataset labels are themselves numeric-looking
+    strings (e.g. OpenML datasets that store category codes as '1', '2'),
+    the mapping line must not read as if the LABEL is the value to return.
+
+    Reproduces a real regression: bank-marketing's true labels are the
+    strings '1' (no subscription) and '2' (subscription), encoded to codes
+    0 and 1. An earlier, bare "0=1, 1=2" phrasing was indistinguishable from
+    a code->code mapping, and gpt-5.5 responded by writing `return 1` /
+    `return 2` (the label) instead of `return 0` / `return 1` (the actual
+    training code) — accuracy on bank-marketing collapsed from 0.90 to 0.08.
+    """
+    clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=False)
+    monkeypatch.setattr(clf, "_call_llm", lambda p, web_search=False: SIMPLE_CODE)
+
+    X = pd.DataFrame({"age": [40, 50, 60, 30]})
+    y = pd.Series(["1", "2", "1", "2"])
+    clf.fit(X, y)
+
+    fit_prompt = clf.fit_prompt_
+    # The original labels must be visually distinguished (quoted) from the
+    # bare training codes, and the prompt must explicitly say the function
+    # returns the code, not the label.
+    assert '0="1"' in fit_prompt
+    assert '1="2"' in fit_prompt
+    assert "never return the original label" in fit_prompt or "never the original label" in fit_prompt
 
 
 def test_context_prepass_fallback_on_llm_failure(monkeypatch):

@@ -159,22 +159,30 @@ def test_prepass_prompt_forbids_fences(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-def test_prepass_value_summary_shows_all_values(monkeypatch):
-    """All unique values per column appear in the pre-pass prompt — no cap."""
+def test_prepass_value_summary_caps_high_cardinality_columns(monkeypatch):
+    """Columns above the cap show a bounded preview, not every unique value.
+
+    Previously there was no cap at all, which meant a single high-cardinality
+    or near-continuous column (e.g. free-text names, raw timestamps) could
+    blow the pre-pass prompt past the model's context window regardless of
+    row count — this happened for real on the spotify-genre dataset (a
+    track_name column with 23,449 uniques produced a ~392k-token prompt
+    against gpt-4o's 128k-token limit, failing every time).
+    """
     clf = SkribeClassifier(model="gpt-5.4-mini", verbose=False, context_prepass=True)
     monkeypatch.setattr(
         clf, "_call_llm",
         lambda p, web_search=False: "def predict(**f): return int(int(f.get('val', 0)) > 14)"
     )
 
-    # 30 unique values in each column
+    # 30 unique values in each column — over the 20-value cap.
     X = pd.DataFrame({"code": [str(i) for i in range(30)], "val": range(30)})
     y = pd.Series([i % 2 for i in range(30)])
     clf.fit(X, y, dataset_description="Some dataset.")
 
-    # All 30 values present, no ellipsis
-    assert ", ..." not in clf.context_prepass_prompt_
-    assert "29" in clf.context_prepass_prompt_
+    prompt = clf.context_prepass_prompt_
+    assert "more unique values" in prompt
+    assert "29" not in prompt
 
 
 def test_prepass_value_summary_no_ellipsis_when_few_values(monkeypatch):

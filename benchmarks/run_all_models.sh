@@ -50,7 +50,7 @@ for name, spec in DEFAULT_DATASETS.items():
     csv_path = spec[2] if len(spec) > 2 else None
     target_col = spec[3] if len(spec) > 3 else None
     description = spec[4] if len(spec) > 4 else None
-    X, _, _, _ = load_dataset(
+    X, _, _, _, _ = load_dataset(
         openml_name, version, None,
         csv_path=csv_path, target_col=target_col, description=description,
         require_description=False,
@@ -113,7 +113,7 @@ import sys
 sys.path.insert(0, "benchmarks")
 from benchmark_utils import MODEL_PROGRESSION
 for m in MODEL_PROGRESSION:
-    if not m["model_id"].endswith("+web"):
+    if not m["model_id"].endswith("-web"):
         print(m["model_id"])
 EOF
 ))

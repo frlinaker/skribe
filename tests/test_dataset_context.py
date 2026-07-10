@@ -749,6 +749,86 @@ def test_reasoning_effort_get_params_roundtrip():
     assert clf.get_params()["reasoning_effort"] == "medium"
 
 
+def test_reasoning_effort_max_routes_to_responses_api(monkeypatch):
+    """ "max" effort is Responses-API-only (Chat Completions rejects it), so it
+    must route there automatically -- without requiring web_search=True, which
+    is an unrelated feature."""
+    clf = SkribeClassifier(model="gpt-5.5", verbose=False, reasoning_effort="max")
+
+    completion_calls = []
+
+    def fake_completion(model, messages, **kwargs):
+        completion_calls.append(kwargs)
+        resp = MagicMock()
+        resp.choices[0].message.content = SIMPLE_CODE
+        resp.choices[0].finish_reason = "stop"
+        return resp
+
+    responses_calls = []
+
+    def fake_responses(prompt, model, **kwargs):
+        responses_calls.append(kwargs)
+        msg = MagicMock()
+        msg.type = "message"
+        content_part = MagicMock()
+        content_part.type = "output_text"
+        content_part.text = SIMPLE_CODE
+        content_part.annotations = []
+        msg.content = [content_part]
+        resp = MagicMock()
+        resp.output = [msg]
+        return resp
+
+    monkeypatch.setattr("litellm.completion", fake_completion)
+    monkeypatch.setattr("litellm.responses", fake_responses)
+
+    X = pd.DataFrame({"x": [1, 2]})
+    y = pd.Series([0, 1])
+    clf.fit(X, y)
+
+    assert not completion_calls
+    assert len(responses_calls) >= 1
+    assert responses_calls[0]["reasoning_effort"] == "max"
+
+
+def test_responses_api_incomplete_status_triggers_retry(monkeypatch):
+    """status='incomplete' (Responses-API truncation signal) must raise
+    _OutputTruncated and trigger the same shrink-and-retry path Chat
+    Completions gets via finish_reason='length' -- otherwise a max-effort
+    call that gets cut off would silently return partial code."""
+    clf = SkribeClassifier(model="gpt-5.5", verbose=False, reasoning_effort="max")
+
+    responses_calls = []
+
+    def fake_responses(prompt, model, **kwargs):
+        responses_calls.append(kwargs)
+        msg = MagicMock()
+        msg.type = "message"
+        content_part = MagicMock()
+        content_part.type = "output_text"
+        content_part.annotations = []
+        msg.content = [content_part]
+        resp = MagicMock()
+        resp.output = [msg]
+        if len(responses_calls) == 1:
+            content_part.text = "def predict(**f):\n    return 0  # cut off mid"
+            resp.status = "incomplete"
+            resp.incomplete_details = MagicMock(reason="max_output_tokens")
+        else:
+            content_part.text = SIMPLE_CODE
+            resp.status = "completed"
+            resp.incomplete_details = None
+        return resp
+
+    monkeypatch.setattr("litellm.responses", fake_responses)
+
+    X = pd.DataFrame({"x": [1, 2]})
+    y = pd.Series([0, 1])
+    clf.fit(X, y)
+
+    assert len(responses_calls) >= 2
+
+
 def test_web_search_reenabled_on_final_retry_attempt(monkeypatch):
     """A retry caused by a knowledge gap (e.g. bad value mapping) benefits from
     a lookup exactly as much as the first attempt -- so the last retry should

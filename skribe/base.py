@@ -315,7 +315,9 @@ class BaseSkribeEstimator(BaseEstimator):
         ``reasoning_effort`` (``"low"``/``"medium"``/``"high"``/etc, provider-
         dependent) defaults to ``self.reasoning_effort`` when not overridden by
         the caller — passed through to litellm uniformly; unsupported models
-        simply ignore it (litellm no-ops rather than erroring).
+        simply ignore it (litellm no-ops rather than erroring). ``"max"`` is
+        Responses-API-only (OpenAI's Chat Completions rejects it outright), so
+        it forces that routing even without ``web_search=True``.
 
         ``web_search_config`` merges extra keys into the Responses API's
         ``web_search`` tool dict (e.g. ``search_context_size``, ``filters``)
@@ -378,16 +380,24 @@ class BaseSkribeEstimator(BaseEstimator):
         branching."""
         import litellm
 
-        if web_search and model in self._WEB_SEARCH_RESPONSES_API_MODELS:
-            # GPT-5+ uses the Responses API with tools=[{"type": "web_search"}].
+        # "max" reasoning_effort is Responses-API-only -- Chat Completions
+        # rejects it outright ("Supported values are: none, low, medium,
+        # high, xhigh"). Route there even without web_search=True, since
+        # requiring an unrelated feature flag to unlock an effort level
+        # would be surprising.
+        needs_responses_api = reasoning_effort == "max" or (
+            web_search and model in self._WEB_SEARCH_RESPONSES_API_MODELS
+        )
+        if needs_responses_api:
             responses_kwargs: dict = {}
             if reasoning_effort is not None:
                 responses_kwargs["reasoning_effort"] = reasoning_effort
-            web_search_tool = {"type": "web_search", **(web_search_config or {})}
+            if web_search:
+                web_search_tool = {"type": "web_search", **(web_search_config or {})}
+                responses_kwargs["tools"] = [web_search_tool]
             response = litellm.responses(
                 prompt,
                 model,
-                tools=[web_search_tool],
                 timeout=self.llm_timeout,
                 **responses_kwargs,
             )
@@ -406,10 +416,18 @@ class BaseSkribeEstimator(BaseEstimator):
                                 url = getattr(ann, "url", None)
                                 if url:
                                     citations.append(url)
-            self._record_web_search_evidence(search_call_count, citations)
+            if web_search:
+                self._record_web_search_evidence(search_call_count, citations)
             content = content.strip()
             if self.verbose:
                 logger.info("[LLM Response]\n%s", content)
+            if response.status == "incomplete":
+                logger.warning(
+                    "LLM output was truncated (status='incomplete', reason=%s) — "
+                    "response may be incomplete.",
+                    getattr(response.incomplete_details, "reason", None),
+                )
+                raise _OutputTruncated(content)
             return content
 
         kwargs: dict = {}

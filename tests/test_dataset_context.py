@@ -909,6 +909,56 @@ def test_responses_api_incomplete_status_triggers_retry(monkeypatch):
     assert len(responses_calls) >= 2
 
 
+def test_responses_api_context_window_exceeded_triggers_shrink_and_retry(monkeypatch):
+    """The Responses API branch had no try/except at all around
+    litellm.responses() -- any BadRequestError (including a context-window
+    rejection) propagated straight past _call_llm's retry loop and failed the
+    whole fit, instead of getting the same shrink-and-retry treatment the
+    Chat Completions branch already has via litellm.ContextWindowExceededError.
+    This reproduces a real failure seen with openai/gpt-5.6-sol-web on larger
+    datasets (adult, bank-marketing, spotify-genre), where OpenAI's error used
+    a phrasing ("Your input exceeds the context window of this model.") that
+    litellm's own classifier doesn't recognize either, so it surfaced as a
+    bare BadRequestError rather than litellm.ContextWindowExceededError."""
+    import litellm
+
+    clf = SkribeClassifier(model="gpt-5.5", verbose=False, reasoning_effort="max")
+
+    responses_calls = []
+
+    def fake_responses(prompt, model, **kwargs):
+        responses_calls.append(kwargs)
+        if len(responses_calls) == 1:
+            raise litellm.BadRequestError(
+                message=(
+                    "Your input exceeds the context window of this model. "
+                    "Please adjust your input and try again."
+                ),
+                model=model,
+                llm_provider="openai",
+            )
+        msg = MagicMock()
+        msg.type = "message"
+        content_part = MagicMock()
+        content_part.type = "output_text"
+        content_part.text = SIMPLE_CODE
+        content_part.annotations = []
+        msg.content = [content_part]
+        resp = MagicMock()
+        resp.output = [msg]
+        resp.status = "completed"
+        resp.incomplete_details = None
+        return resp
+
+    monkeypatch.setattr("litellm.responses", fake_responses)
+
+    X = pd.DataFrame({"x": [1, 2]})
+    y = pd.Series([0, 1])
+    clf.fit(X, y)
+
+    assert len(responses_calls) >= 2
+
+
 def test_web_search_reenabled_on_final_retry_attempt(monkeypatch):
     """A retry caused by a knowledge gap (e.g. bad value mapping) benefits from
     a lookup exactly as much as the first attempt -- so the last retry should

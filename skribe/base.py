@@ -68,6 +68,18 @@ _CONTEXT_LIMIT_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Additional phrasings for context-window rejections that litellm's own
+# exception mapper doesn't recognize (yet), so they surface as a bare
+# litellm.BadRequestError instead of litellm.ContextWindowExceededError --
+# seen live from openai/gpt-5.6-sol(-web) on the Responses API, which never
+# includes a numeric limit, unlike the phrasings _CONTEXT_LIMIT_RE matches.
+_UNMAPPED_CONTEXT_WINDOW_PHRASES = ("exceeds the context window of this model",)
+
+
+def _is_context_window_error(e: Exception) -> bool:
+    text = str(e).lower()
+    return any(phrase in text for phrase in _UNMAPPED_CONTEXT_WINDOW_PHRASES)
+
 
 def _format_error_with_suggestion(e: Exception) -> str:
     """str(e) drops Python's own "Did you mean: 'x'?" suggestion for typo'd
@@ -268,6 +280,8 @@ class BaseSkribeEstimator(BaseEstimator):
         "gpt-5.2",
         "gpt-5.1",
         "gpt-5",
+        "openai/gpt-5.6-sol",
+        "openai/gpt-5.6-terra",
     }
 
     # Models that support web search via web_search_options in the Chat Completions API.
@@ -421,12 +435,49 @@ class BaseSkribeEstimator(BaseEstimator):
             if web_search:
                 web_search_tool = {"type": "web_search", **(web_search_config or {})}
                 responses_kwargs["tools"] = [web_search_tool]
-            response = litellm.responses(
-                prompt,
-                model,
-                timeout=self.llm_timeout,
-                **responses_kwargs,
-            )
+            try:
+                response = litellm.responses(
+                    prompt,
+                    model,
+                    timeout=self.llm_timeout,
+                    **responses_kwargs,
+                )
+            except litellm.RateLimitError:
+                # Let _call_llm's retry loop handle this — it resends the
+                # same prompt after a backoff instead of failing the whole fit.
+                raise
+            except litellm.ContextWindowExceededError as e:
+                match = _CONTEXT_LIMIT_RE.search(str(e))
+                real_max_input_tokens = int(match.group(1).replace(",", "")) if match else None
+                logger.warning(
+                    "Context window exceeded at API level (local token count was inaccurate) — "
+                    "will reduce dataset and retry%s. Error: %s",
+                    (
+                        f" using real limit {real_max_input_tokens:,} tokens"
+                        if real_max_input_tokens
+                        else ""
+                    ),
+                    e,
+                )
+                raise _ContextWindowExceeded(str(e), real_max_input_tokens)
+            except litellm.BadRequestError as e:
+                # litellm's own exception mapper doesn't recognize every
+                # provider's context-window phrasing (e.g. OpenAI's Responses
+                # API on gpt-5.6-sol/-terra: "Your input exceeds the context
+                # window of this model."), so it surfaces here as a bare
+                # BadRequestError instead of the typed
+                # ContextWindowExceededError caught above. Check the message
+                # ourselves rather than losing shrink-and-retry entirely.
+                if _is_context_window_error(e):
+                    logger.warning(
+                        "Context window exceeded at API level (unrecognized phrasing) — "
+                        "will reduce dataset and retry. Error: %s",
+                        e,
+                    )
+                    raise _ContextWindowExceeded(str(e), None)
+                logger.error("LLM call failed: %s", e)
+                self.fit_log_.append({"stage": "llm_call", "error": str(e)})
+                raise RuntimeError(f"LLM call failed: {e}")
             content = ""
             search_call_count = 0
             citations: list = []

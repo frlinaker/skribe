@@ -35,6 +35,14 @@ DEFAULT_MODEL = "gpt-5.5"
 _CONTEXT_HEADROOM = 0.92
 _CONTEXT_HEADROOM_STEP = 0.05
 
+# Rate limits (HTTP 429) are transient quota exhaustion (requests/tokens per
+# minute), not a signal about this specific request -- so the right response
+# is to wait out the window and resend the *same* prompt, not to give up.
+# Bounded so a persistently exhausted quota still fails eventually instead of
+# hanging forever.
+_MAX_RATE_LIMIT_RETRIES = 3
+_RATE_LIMIT_BACKOFF_SECONDS = 60
+
 
 class _OutputTruncated(Exception):
     """Raised when the LLM signals finish_reason='length' (output cut off)."""
@@ -326,6 +334,50 @@ class BaseSkribeEstimator(BaseEstimator):
         if model.startswith("ollama:"):
             model = "ollama/" + model[len("ollama:") :]
 
+        for attempt in range(_MAX_RATE_LIMIT_RETRIES + 1):
+            try:
+                return self._dispatch_llm_call(
+                    prompt, model, web_search, reasoning_effort, web_search_config
+                )
+            except litellm.RateLimitError as e:
+                is_last_attempt = attempt == _MAX_RATE_LIMIT_RETRIES
+                self.fit_log_.append(
+                    {
+                        "stage": "llm_call",
+                        "error": f"RateLimitError: {e}",
+                        "retrying": not is_last_attempt,
+                    }
+                )
+                if is_last_attempt:
+                    logger.error(
+                        "Rate limit hit — exhausted %d retries. Error: %s",
+                        _MAX_RATE_LIMIT_RETRIES,
+                        e,
+                    )
+                    raise RuntimeError(f"LLM call failed: {e}")
+                logger.warning(
+                    "Rate limit hit (attempt %d/%d) — sleeping %ds before retrying. Error: %s",
+                    attempt + 1,
+                    _MAX_RATE_LIMIT_RETRIES,
+                    _RATE_LIMIT_BACKOFF_SECONDS,
+                    e,
+                )
+                time.sleep(_RATE_LIMIT_BACKOFF_SECONDS)
+
+    def _dispatch_llm_call(
+        self,
+        prompt: str,
+        model: str,
+        web_search: bool,
+        reasoning_effort: Optional[str],
+        web_search_config: Optional[dict],
+    ) -> str:
+        """One attempt at the actual litellm request -- factored out of
+        _call_llm so its retry loop can resend the same prompt on a
+        RateLimitError without duplicating the Responses-API/Chat-Completions
+        branching."""
+        import litellm
+
         if web_search and model in self._WEB_SEARCH_RESPONSES_API_MODELS:
             # GPT-5+ uses the Responses API with tools=[{"type": "web_search"}].
             responses_kwargs: dict = {}
@@ -421,11 +473,10 @@ class BaseSkribeEstimator(BaseEstimator):
                 e,
             )
             raise _ContextWindowExceeded(str(e), real_max_input_tokens)
-        except litellm.RateLimitError as e:
-            logger.warning("Rate limit hit — sleeping 60s before re-raising. Error: %s", e)
-            self.fit_log_.append({"stage": "llm_call", "error": f"RateLimitError: {e}"})
-            time.sleep(60)
-            raise RuntimeError(f"LLM call failed: {e}")
+        except litellm.RateLimitError:
+            # Let _call_llm's retry loop handle this — it resends the same
+            # prompt after a backoff instead of failing the whole fit.
+            raise
         except Exception as e:
             logger.error("LLM call failed: %s", e)
             self.fit_log_.append({"stage": "llm_call", "error": str(e)})

@@ -174,6 +174,46 @@ def test_reasoning_effort_omitted_keeps_existing_cache_filename(
     assert (cache_dir / expected_name).exists()
 
 
+def test_reasoning_mode_included_in_cache_filename(monkeypatch, tiny_csv_spec, tmp_path):
+    """Same requirement as reasoning_effort above, for reasoning_mode: a
+    "pro"-mode run must not collide with (or be skipped in favor of) a
+    default-mode run of the same dataset+model+effort."""
+    monkeypatch.setattr(
+        SkribeClassifier,
+        "_call_llm",
+        lambda self, prompt, web_search=False, **kwargs: "def predict(**features): return 0",
+    )
+    monkeypatch.setattr(SkribeClassifier, "_extend_code", lambda self, code, web_search=False: code)
+
+    cache_dir = tmp_path / "cache"
+
+    run_openml_fit.run_one_skribe(
+        dataset="tiny",
+        spec=tiny_csv_spec,
+        model_id="gpt-5.4-mini",
+        max_rows=None,
+        cache_dir=cache_dir,
+        skip_context=True,
+        reasoning_effort="max",
+        reasoning_mode=None,
+    )
+    run_openml_fit.run_one_skribe(
+        dataset="tiny",
+        spec=tiny_csv_spec,
+        model_id="gpt-5.4-mini",
+        max_rows=None,
+        cache_dir=cache_dir,
+        skip_context=True,
+        reasoning_effort="max",
+        reasoning_mode="pro",
+    )
+
+    cache_files = sorted(p.name for p in cache_dir.glob("tiny-gpt-5.4-mini*.json"))
+    assert len(cache_files) == 2, f"expected 2 distinct cache files, got {cache_files}"
+    assert any("mode_pro" in name for name in cache_files)
+    assert any("mode_pro" not in name for name in cache_files)
+
+
 def test_cached_result_has_explicit_status_on_success(monkeypatch, tiny_csv_spec):
     """result['skribe']['status'] must be an explicit 'ok'/'error' marker, not
     something callers have to derive by checking for the absence of an

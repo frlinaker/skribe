@@ -206,12 +206,16 @@ def _cache_key(
     fe_model: str | None = None,
     web_search: bool = False,
     reasoning_effort: str | None = None,
+    reasoning_mode: str | None = None,
 ) -> str:
     raw = f"{CACHE_SCHEMA}|{dataset}|{model_id}|{max_rows}|fe={fe_model or ''}|ws={web_search}"
     # Only mixed in when explicitly set, so pre-existing cache files (hashed
-    # before reasoning_effort existed) keep resolving to the same key.
+    # before reasoning_effort/reasoning_mode existed) keep resolving to the
+    # same key.
     if reasoning_effort:
         raw += f"|re={reasoning_effort}"
+    if reasoning_mode:
+        raw += f"|rm={reasoning_mode}"
     return hashlib.sha1(raw.encode()).hexdigest()[:16]
 
 
@@ -508,9 +512,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
             line_x = pd.concat(
                 [grp["release_date"], pd.Series([pd.Timestamp(_today)])], ignore_index=True
             )
-            line_y = pd.concat(
-                [grp["best_so_far"], pd.Series([final_acc])], ignore_index=True
-            )
+            line_y = pd.concat([grp["best_so_far"], pd.Series([final_acc])], ignore_index=True)
             ax.plot(
                 line_x,
                 line_y,

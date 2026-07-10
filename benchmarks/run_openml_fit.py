@@ -225,20 +225,23 @@ def run_one_skribe(
     skip_cache_read: bool = False,
     skip_context: bool = False,
     reasoning_effort: str | None = None,
+    reasoning_mode: str | None = None,
     llm_timeout: float | None = None,
 ) -> dict:
     actual_model_id = base_model_id or (model_id.removesuffix("-web") if web_search else model_id)
     tag = f"[{dataset} × {model_id}]"
     safe_model_id = model_id.replace("/", "-")
-    # The effort suffix is only added to the filename when explicitly set, so
-    # existing cache files (which predate reasoning_effort) keep their names
-    # and a plain default-effort run still resolves to the same file.
+    # The effort/mode suffixes are only added to the filename when explicitly
+    # set, so existing cache files (which predate reasoning_effort/
+    # reasoning_mode) keep their names and a plain default run still
+    # resolves to the same file.
     effort_suffix = f"-effort_{reasoning_effort}" if reasoning_effort else ""
+    mode_suffix = f"-mode_{reasoning_mode}" if reasoning_mode else ""
     cache_file = (
         cache_dir
         / (
-            f"{dataset}-{safe_model_id}{effort_suffix}-"
-            f"{_cache_key(dataset, model_id, max_rows, fe_model=fe_model, web_search=web_search, reasoning_effort=reasoning_effort)}.json"
+            f"{dataset}-{safe_model_id}{effort_suffix}{mode_suffix}-"
+            f"{_cache_key(dataset, model_id, max_rows, fe_model=fe_model, web_search=web_search, reasoning_effort=reasoning_effort, reasoning_mode=reasoning_mode)}.json"
         )
         if cache_dir
         else None
@@ -297,6 +300,8 @@ def run_one_skribe(
     }
     if reasoning_effort:
         result["reasoning_effort"] = reasoning_effort
+    if reasoning_mode:
+        result["reasoning_mode"] = reasoning_mode
 
     from skribe import AdaptiveSkribeEngineer, SkribeClassifier
 
@@ -326,6 +331,7 @@ def run_one_skribe(
             vertex_location=vertex_region or None,
             context_prepass=not skip_context,
             reasoning_effort=reasoning_effort,
+            reasoning_mode=reasoning_mode,
         )
         if llm_timeout is not None:
             clf_kwargs["llm_timeout"] = llm_timeout
@@ -488,9 +494,17 @@ def main(argv=None):
         "--reasoning-effort",
         default=None,
         metavar="EFFORT",
-        help="Reasoning effort for --model skribe (e.g. low/medium/high/xhigh, provider-"
+        help="Reasoning effort for --model skribe (e.g. low/medium/high/xhigh/max, provider-"
         "dependent). Included in the cache filename/key when set, so different-effort "
         "runs of the same dataset+model don't collide.",
+    )
+    parser.add_argument(
+        "--reasoning-mode",
+        default=None,
+        metavar="MODE",
+        help="Reasoning mode for --model skribe (currently only OpenAI's 'pro' tier; "
+        "Responses-API-only, forces that routing). Included in the cache filename/key "
+        "when set, so different-mode runs of the same dataset+model don't collide.",
     )
     parser.add_argument(
         "--llm-timeout",
@@ -564,6 +578,7 @@ def main(argv=None):
         skip_cache_read=args.no_cache,
         skip_context=args.skip_context,
         reasoning_effort=args.reasoning_effort,
+        reasoning_mode=args.reasoning_mode,
         llm_timeout=args.llm_timeout,
     )
     return 0

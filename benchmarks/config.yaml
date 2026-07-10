@@ -60,6 +60,12 @@ models:
     family: GPT-5.6
     provider: openai
     color: "#701010"
+  - model_id: openai/gpt-5.6-sol
+    label: GPT-5.6 Sol
+    release_date: 2026-07-09  # GA: Jul 9 2026
+    family: GPT-5.6
+    provider: openai
+    color: "#4a0808"
 
   # Google Gemini (via Vertex AI) — ordered oldest GA -> newest
   - model_id: vertex_ai/gemini-2.5-flash

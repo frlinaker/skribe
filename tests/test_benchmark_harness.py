@@ -5,6 +5,7 @@ scripts invoked by run_all_models.sh), so these tests reach into it via
 sys.path the same way the scripts reach into benchmark_utils.
 """
 
+import json
 import os
 import sys
 
@@ -14,6 +15,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "benchmarks"))
 
 import run_openml_fit  # noqa: E402
+from benchmark_utils import find_failed_skribe_cache_entries  # noqa: E402
 
 from skribe.classifier import SkribeClassifier
 
@@ -297,3 +299,77 @@ def test_cached_failure_includes_fit_log(monkeypatch, tiny_csv_spec):
     # default max_retries=2 -> 3 total attempts, all failing.
     assert len(fit_log) == 3
     assert all("nope" in entry["error"] for entry in fit_log)
+
+
+def _write_cache_file(cache_dir, name, contents):
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    (cache_dir / name).write_text(json.dumps(contents))
+
+
+def test_find_failed_skribe_cache_entries_finds_errors(tmp_path):
+    """A skribe cache file with an error (explicit status or bare 'error'
+    key, covering both old and new cache-file schemas) must be returned as a
+    (model_id, dataset) pair to retry."""
+    cache_dir = tmp_path / "cache"
+    _write_cache_file(
+        cache_dir,
+        "adult-gpt-5.5-abc.json",
+        {
+            "dataset": "adult",
+            "model_id": "gpt-5.5",
+            "skribe": {"status": "error", "error": "Timeout"},
+        },
+    )
+    _write_cache_file(
+        cache_dir,
+        "car-gpt-4o-def.json",
+        {
+            "dataset": "car",
+            "model_id": "gpt-4o",
+            # old-schema failure: no "status" field, just "error".
+            "skribe": {"error": "Timeout"},
+        },
+    )
+
+    pairs = find_failed_skribe_cache_entries(cache_dir)
+
+    assert set(pairs) == {("gpt-5.5", "adult"), ("gpt-4o", "car")}
+
+
+def test_find_failed_skribe_cache_entries_skips_successes(tmp_path):
+    """A successful skribe cache file must not be returned -- otherwise
+    --retry-failed would re-run everything, defeating its purpose."""
+    cache_dir = tmp_path / "cache"
+    _write_cache_file(
+        cache_dir,
+        "adult-gpt-5.5-abc.json",
+        {
+            "dataset": "adult",
+            "model_id": "gpt-5.5",
+            "skribe": {"status": "ok", "accuracy": 0.9},
+        },
+    )
+
+    pairs = find_failed_skribe_cache_entries(cache_dir)
+
+    assert pairs == []
+
+
+def test_find_failed_skribe_cache_entries_skips_baselines(tmp_path):
+    """A failed baseline (logreg/xgboost/tabpfn) cache file must not be
+    returned -- there's no --llm to retry a baseline with, and
+    run_openml_fit.py's baseline path takes --model, not --llm."""
+    cache_dir = tmp_path / "cache"
+    _write_cache_file(
+        cache_dir,
+        "adult-logreg-abc.json",
+        {
+            "dataset": "adult",
+            "model_id": "logreg",
+            "logreg": {"status": "error", "error": "boom"},
+        },
+    )
+
+    pairs = find_failed_skribe_cache_entries(cache_dir)
+
+    assert pairs == []

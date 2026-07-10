@@ -224,6 +224,41 @@ def _baseline_cache_key(dataset: str, max_rows: int | None, fe_model: str | None
     return hashlib.sha1(raw.encode()).hexdigest()[:16]
 
 
+def find_failed_skribe_cache_entries(cache_dir: Path) -> list[tuple[str, str]]:
+    """Scan cache_dir for skribe cache files whose result errored out (timeout,
+    rate-limit, etc.), returning (model_id, dataset) pairs suitable for
+    re-running via run_openml_fit.py --model skribe --llm <model_id> --dataset
+    <dataset> --no-cache.
+
+    Uses the same is_error derivation as build_summary_df: an explicit
+    "status" field when present (post reasoning_effort/status-field work),
+    else the presence of an "error" key for cache files that predate it.
+    Baseline-model cache files (logreg/xgboost/tabpfn) are skipped -- they
+    have no --llm to retry with and run_all_models.sh already re-runs them
+    unconditionally every time since they're cheap and cache-checked inside
+    run_one_baseline itself.
+    """
+    import json
+
+    pairs = []
+    for f in sorted(Path(cache_dir).glob("*.json")):
+        try:
+            d = json.loads(f.read_text())
+        except (json.JSONDecodeError, OSError):
+            continue
+        model_id = d.get("model_id")
+        dataset = d.get("dataset")
+        if not model_id or not dataset or model_id in BASELINE_MODELS:
+            continue
+        skribe = d.get("skribe")
+        if not isinstance(skribe, dict):
+            continue
+        is_error = skribe.get("status") == "error" if "status" in skribe else "error" in skribe
+        if is_error:
+            pairs.append((model_id, dataset))
+    return pairs
+
+
 def _xgb_classifier():
     try:
         from xgboost import XGBClassifier

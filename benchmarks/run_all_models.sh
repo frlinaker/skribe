@@ -8,6 +8,9 @@
 # Pass --no-cache to force re-run everything.
 # Pass --no-collate to skip the final collate step.
 # Pass --skip-baselines to skip straight to the LLM section.
+# Pass --retry-failed to skip straight to the LLM section and only re-run
+# (model, dataset) pairs whose cached result errored out (timeout,
+# rate-limit, etc.) instead of the full cross product.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -20,6 +23,7 @@ NO_CACHE=""
 NO_COLLATE=""
 BASELINES_ONLY=""
 SKIP_BASELINES=""
+RETRY_FAILED=""
 DATASET_WORKERS=2   # parallel dataset invocations per LLM model (2 CPUs, 8 GB RAM)
 EXTRA_ARGS=()
 for arg in "$@"; do
@@ -28,10 +32,16 @@ for arg in "$@"; do
         --no-collate)     NO_COLLATE="1" ;;
         --baselines-only) BASELINES_ONLY="1" ; NO_COLLATE="1" ;;
         --skip-baselines) SKIP_BASELINES="1" ;;
+        --retry-failed)   RETRY_FAILED="1" ; SKIP_BASELINES="1" ;;
         --workers=*)      DATASET_WORKERS="${arg#--workers=}" ;;
         *)                EXTRA_ARGS+=("$arg") ;;
     esac
 done
+
+if [ -n "$RETRY_FAILED" ] && [ -n "$NO_CACHE" ]; then
+    echo "--retry-failed and --no-cache are mutually exclusive (--no-cache re-runs everything, making the failed-only filter meaningless)." >&2
+    exit 1
+fi
 
 LOG_DIR="artifacts/benchmark_results"
 mkdir -p "$LOG_DIR"
@@ -108,7 +118,36 @@ fi
 # LLM variants — all providers share one flat (model × dataset) work queue
 # ---------------------------------------------------------------------------
 
-LLM_MODELS=($($PYTHON - <<'EOF'
+if [ -n "$RETRY_FAILED" ]; then
+    echo ""
+    echo "════════════════════════════════════════════════════════════════"
+    echo "  Finding failed cache entries to retry…"
+    echo "════════════════════════════════════════════════════════════════"
+
+    # (model_id, dataset) pairs whose cached result errored out (timeout,
+    # rate-limit, etc.) last run. Each retried invocation still passes
+    # through run_one_skribe's own cache-read path (skip_cache_read=False by
+    # default here, i.e. no --no-cache), which re-checks the same is_error
+    # condition and overwrites only if it's still an error or missing.
+    mapfile -t PAIRS < <($PYTHON - <<EOF
+import sys
+sys.path.insert(0, "benchmarks")
+from pathlib import Path
+from benchmark_utils import find_failed_skribe_cache_entries
+for model_id, dataset in find_failed_skribe_cache_entries(Path("$LOG_DIR/cache")):
+    print(model_id)
+    print(dataset)
+EOF
+)
+
+    N_PAIRS=$((${#PAIRS[@]} / 2))
+    if [ "$N_PAIRS" -eq 0 ]; then
+        echo "  No failed cache entries found — nothing to retry."
+        exit 0
+    fi
+    echo "  Found $N_PAIRS failed (model, dataset) pairs to retry."
+else
+    LLM_MODELS=($($PYTHON - <<'EOF'
 import sys
 sys.path.insert(0, "benchmarks")
 from benchmark_utils import MODEL_PROGRESSION
@@ -118,28 +157,38 @@ for m in MODEL_PROGRESSION:
 EOF
 ))
 
-echo ""
-echo "════════════════════════════════════════════════════════════════"
-echo "  Starting LLM runs  (${#LLM_MODELS[@]} models × ${#DATASETS[@]} datasets, $DATASET_WORKERS workers)"
-echo "════════════════════════════════════════════════════════════════"
+    echo ""
+    echo "════════════════════════════════════════════════════════════════"
+    echo "  Starting LLM runs  (${#LLM_MODELS[@]} models × ${#DATASETS[@]} datasets, $DATASET_WORKERS workers)"
+    echo "════════════════════════════════════════════════════════════════"
 
-# Flatten the full (dataset × model) cross product into one queue, mixing
-# providers together. Ordered dataset-outer / model-inner over the
-# already-size-sorted DATASETS list: all models for the smallest dataset
-# first, then all models for the next-smallest, etc. A slow straggler on
-# one model/provider can't stall workers that could be making progress
-# elsewhere — every worker just pulls whatever pair is next.
-PAIRS=()
-for DS in "${DATASETS[@]}"; do
-    for MODEL_ID in "${LLM_MODELS[@]}"; do
-        PAIRS+=("$MODEL_ID" "$DS")
+    # Flatten the full (dataset × model) cross product into one queue, mixing
+    # providers together. Ordered dataset-outer / model-inner over the
+    # already-size-sorted DATASETS list: all models for the smallest dataset
+    # first, then all models for the next-smallest, etc. A slow straggler on
+    # one model/provider can't stall workers that could be making progress
+    # elsewhere — every worker just pulls whatever pair is next.
+    PAIRS=()
+    for DS in "${DATASETS[@]}"; do
+        for MODEL_ID in "${LLM_MODELS[@]}"; do
+            PAIRS+=("$MODEL_ID" "$DS")
+        done
     done
-done
+fi
 
 LLM_LOG="$LOG_DIR/run_llm.log"
-printf '%s\n' "${PAIRS[@]}" | xargs -P "$DATASET_WORKERS" -n 2 sh -c '
-    "$0" benchmarks/run_openml_fit.py --model skribe --llm "$1" --dataset "$2" '"$NO_CACHE"' '"${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"'
-' "$PYTHON" 2>&1 | tee "$LLM_LOG"
+# EXTRA_ARGS is passed via the environment (not as extra positional args to
+# sh -c) because xargs -n 2 always appends its 2 stdin-derived args at the
+# very end of the command line, after any fixed positional args -- there's
+# no portable way to have fixed args trail the xargs-supplied ones, so
+# "$1"/"$2" below would end up bound to the wrong values if EXTRA_ARGS were
+# positional. This only works because EXTRA_ARGS entries are simple
+# whitespace-separated flags/values (e.g. "--llm-timeout 300"), not free text.
+printf '%s\n' "${PAIRS[@]}" | xargs -P "$DATASET_WORKERS" -n 2 \
+    env PY="$PYTHON" NO_CACHE="$NO_CACHE" EXTRA="${EXTRA_ARGS[*]+"${EXTRA_ARGS[*]}"}" \
+    sh -c '
+        "$PY" benchmarks/run_openml_fit.py --model skribe --llm "$1" --dataset "$2" $NO_CACHE $EXTRA
+    ' _ 2>&1 | tee "$LLM_LOG"
 LLM_RC=${PIPESTATUS[0]}
 
 echo ""

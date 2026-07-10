@@ -413,8 +413,16 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
     # Right edge for the envelope lines below -- "best so far" is still
     # current today even though no newer model has been released, so the
     # line should reach the right edge of the plot rather than stopping
-    # dead at the last release date.
+    # dead at the last release date. Extending only to "today" (rather than
+    # to the same right edge the axis itself gets pinned to further down)
+    # left a visible gap between the line's end and the plot border, since
+    # the axis right edge includes extra slack margin beyond today.
     _today = datetime.now().date()
+    _today_num = mdates.date2num(_today)
+    _release_min_num = mdates.date2num(pl_data["release_date"].min())
+    _line_end = pd.Timestamp(
+        mdates.num2date(_today_num + 0.035 * (_today_num - _release_min_num)).date()
+    )
 
     # ── 1. Timeline: mean accuracy vs model release date ─────────────────────
     fig, ax = plt.subplots(figsize=(12, 6))
@@ -506,11 +514,11 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
             grp["best_so_far"] = grp["accuracy"].cummax()
             final_acc = grp["best_so_far"].iloc[-1]
             # Extend the envelope flat from the newest model's release date out
-            # to today, so the line reaches the right edge of the plot instead
+            # to the plot's right edge, so the line reaches the border instead
             # of stopping dead at the last release -- the "best so far" value
             # is still current even though no newer model has appeared.
             line_x = pd.concat(
-                [grp["release_date"], pd.Series([pd.Timestamp(_today)])], ignore_index=True
+                [grp["release_date"], pd.Series([_line_end])], ignore_index=True
             )
             line_y = pd.concat([grp["best_so_far"], pd.Series([final_acc])], ignore_index=True)
             ax.plot(
@@ -570,7 +578,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
             final_acc_web = grp["best_so_far"].iloc[-1]
             # Same right-edge extension as the standard envelope above.
             web_line_x = pd.concat(
-                [grp["release_date"], pd.Series([pd.Timestamp(_today)])], ignore_index=True
+                [grp["release_date"], pd.Series([_line_end])], ignore_index=True
             )
             web_line_y = pd.concat(
                 [grp["best_so_far"], pd.Series([final_acc_web])], ignore_index=True
@@ -624,14 +632,11 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
     all_acc = pl_data["accuracy"]
     # Extra top margin so labels for the top-right cluster have room to spread.
     ax.set_ylim(max(0.0, all_acc.min() - 0.08), min(1.05, all_acc.max() + 0.20))
-    # Pin the right edge just past today so the envelope lines' extension
-    # (above) visually reaches "now", with a little slack beyond it so
-    # labels for models released right at today's date (e.g. same-day
-    # launches) have room to spread instead of colliding at a zero-margin
-    # edge.
+    # Pin the right edge to the same _line_end the envelope lines were
+    # extended to above, so the lines visually reach the border instead of
+    # stopping short of it.
     x_min, _ = ax.get_xlim()
-    _today_num = mdates.date2num(_today)
-    ax.set_xlim(x_min, _today_num + 0.035 * (_today_num - x_min))
+    ax.set_xlim(x_min, _line_end)
 
     if _annotation_texts:
         # Collect scatter x/y coords so adjust_text can repel labels from points.

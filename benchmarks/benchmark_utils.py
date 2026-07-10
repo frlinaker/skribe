@@ -622,10 +622,14 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
     all_acc = pl_data["accuracy"]
     # Extra top margin so labels for the top-right cluster have room to spread.
     ax.set_ylim(max(0.0, all_acc.min() - 0.08), min(1.05, all_acc.max() + 0.20))
-    # Pin the right edge to today so the envelope lines' extension (above)
-    # actually reaches it instead of being cut off by autoscale margins.
+    # Pin the right edge just past today so the envelope lines' extension
+    # (above) visually reaches "now", with a little slack beyond it so
+    # labels for models released right at today's date (e.g. same-day
+    # launches) have room to spread instead of colliding at a zero-margin
+    # edge.
     x_min, _ = ax.get_xlim()
-    ax.set_xlim(x_min, mdates.date2num(_today))
+    _today_num = mdates.date2num(_today)
+    ax.set_xlim(x_min, _today_num + 0.035 * (_today_num - x_min))
 
     if _annotation_texts:
         # Collect scatter x/y coords so adjust_text can repel labels from points.
@@ -677,6 +681,23 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                 avoid_self=True,
                 only_move={"text": "xy", "points": "xy"},
             )
+            # adjust_text's repulsion can still push a label's bounding box past
+            # the axes' data limits (e.g. dots pinned at the right edge, like
+            # today's newest-release cluster, have nowhere to repel to but
+            # further right) -- ensure_inside_axes only nudges the anchor point,
+            # not the full rendered box, so clamp explicitly as a backstop.
+            fig.canvas.draw()
+            x0, x1 = ax.get_xlim()
+            y0, y1 = ax.get_ylim()
+            inv = ax.transData.inverted()
+            for txt in _crowded:
+                bbox = txt.get_window_extent(renderer=fig.canvas.get_renderer())
+                (bx0, by0), (bx1, by1) = inv.transform(bbox)
+                dx = min(0.0, x1 - bx1) + max(0.0, x0 - bx0)
+                dy = min(0.0, y1 - by1) + max(0.0, y0 - by0)
+                if dx or dy:
+                    tx, ty = txt.get_position()
+                    txt.set_position((tx + dx, ty + dy))
     ax.set_xlabel("Model release date", fontsize=12)
     ax.set_ylabel(f"Mean accuracy ({n_datasets} datasets)", fontsize=12)
     ax.set_title(

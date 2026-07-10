@@ -438,6 +438,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
             linewidth=1.8,
             linestyle="--",
             label=f"Logistic Regression  ({lr_mean:.3f})",
+            zorder=1,
         )
 
     if not xgb_data.empty:
@@ -449,6 +450,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
             linewidth=1.8,
             linestyle="--",
             label=f"XGBoost  ({xgb_mean:.3f})",
+            zorder=1,
         )
 
     if not tabpfn_data.empty:
@@ -460,6 +462,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
             linewidth=1.8,
             linestyle="--",
             label=f"TabPFN  ({tabpfn_mean:.3f})",
+            zorder=1,
         )
 
     # skribe — one solid line per provider (base models) + one dashed line

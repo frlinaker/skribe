@@ -791,6 +791,86 @@ def test_reasoning_effort_max_routes_to_responses_api(monkeypatch):
     assert responses_calls[0]["reasoning_effort"] == "max"
 
 
+def test_reasoning_mode_pro_sent_as_nested_dict_with_effort(monkeypatch):
+    """reasoning_mode has no Chat Completions equivalent -- setting it must
+    force Responses routing and be sent alongside reasoning_effort as the
+    nested {"effort": ..., "mode": ...} dict the real API expects."""
+    clf = SkribeClassifier(
+        model="gpt-5.5", verbose=False, reasoning_effort="max", reasoning_mode="pro"
+    )
+
+    completion_calls = []
+
+    def fake_completion(model, messages, **kwargs):
+        completion_calls.append(kwargs)
+        resp = MagicMock()
+        resp.choices[0].message.content = SIMPLE_CODE
+        resp.choices[0].finish_reason = "stop"
+        return resp
+
+    responses_calls = []
+
+    def fake_responses(prompt, model, **kwargs):
+        responses_calls.append(kwargs)
+        msg = MagicMock()
+        msg.type = "message"
+        content_part = MagicMock()
+        content_part.type = "output_text"
+        content_part.text = SIMPLE_CODE
+        content_part.annotations = []
+        msg.content = [content_part]
+        resp = MagicMock()
+        resp.output = [msg]
+        return resp
+
+    monkeypatch.setattr("litellm.completion", fake_completion)
+    monkeypatch.setattr("litellm.responses", fake_responses)
+
+    X = pd.DataFrame({"x": [1, 2]})
+    y = pd.Series([0, 1])
+    clf.fit(X, y)
+
+    assert not completion_calls
+    assert len(responses_calls) >= 1
+    assert responses_calls[0]["reasoning_effort"] == {"effort": "max", "mode": "pro"}
+
+
+def test_reasoning_mode_without_explicit_effort_defaults_to_medium(monkeypatch):
+    """reasoning_mode="pro" with no reasoning_effort set should still route to
+    Responses and default the effort sub-field to "medium", matching the real
+    API's own default when effort is omitted."""
+    clf = SkribeClassifier(model="gpt-5.5", verbose=False, reasoning_mode="pro")
+
+    responses_calls = []
+
+    def fake_responses(prompt, model, **kwargs):
+        responses_calls.append(kwargs)
+        msg = MagicMock()
+        msg.type = "message"
+        content_part = MagicMock()
+        content_part.type = "output_text"
+        content_part.text = SIMPLE_CODE
+        content_part.annotations = []
+        msg.content = [content_part]
+        resp = MagicMock()
+        resp.output = [msg]
+        return resp
+
+    monkeypatch.setattr("litellm.responses", fake_responses)
+
+    X = pd.DataFrame({"x": [1, 2]})
+    y = pd.Series([0, 1])
+    clf.fit(X, y)
+
+    assert len(responses_calls) >= 1
+    assert responses_calls[0]["reasoning_effort"] == {"effort": "medium", "mode": "pro"}
+
+
+def test_reasoning_mode_get_params_roundtrip():
+    clf = SkribeClassifier(model="gpt-5.5", verbose=False, reasoning_mode="pro")
+    assert clf.get_params()["reasoning_mode"] == "pro"
+
+
 def test_responses_api_incomplete_status_triggers_retry(monkeypatch):
     """status='incomplete' (Responses-API truncation signal) must raise
     _OutputTruncated and trigger the same shrink-and-retry path Chat

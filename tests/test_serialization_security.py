@@ -32,6 +32,7 @@ ALLOWED_STATE_FIELDS = {
     "vertex_location",
     "llm_timeout",
     "reasoning_effort",
+    "reasoning_mode",
     "target_name_",
     "feature_names_",
     "raw_python_code_",

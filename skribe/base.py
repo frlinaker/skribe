@@ -195,6 +195,7 @@ class BaseSkribeEstimator(BaseEstimator):
         vertex_location: Optional[str] = None,
         llm_timeout: float = 120,
         reasoning_effort: Optional[str] = None,
+        reasoning_mode: Optional[str] = None,
     ):
         self.model = model
         self.verbose = verbose
@@ -205,6 +206,7 @@ class BaseSkribeEstimator(BaseEstimator):
         self.vertex_location = vertex_location
         self.llm_timeout = llm_timeout
         self.reasoning_effort = reasoning_effort
+        self.reasoning_mode = reasoning_mode
         self.predict_fn: Optional[Callable] = None
         self.target_name_: Optional[str] = None
         self.feature_names_: Optional[list] = None
@@ -228,6 +230,7 @@ class BaseSkribeEstimator(BaseEstimator):
             "vertex_location": self.vertex_location,
             "llm_timeout": self.llm_timeout,
             "reasoning_effort": self.reasoning_effort,
+            "reasoning_mode": self.reasoning_mode,
         }
 
     # used by GridSearchCV
@@ -305,6 +308,7 @@ class BaseSkribeEstimator(BaseEstimator):
         web_search: bool = False,
         reasoning_effort: Optional[str] = None,
         web_search_config: Optional[dict] = None,
+        reasoning_mode: Optional[str] = None,
     ) -> str:
         """Call the language model via litellm, return the response text.
 
@@ -319,6 +323,12 @@ class BaseSkribeEstimator(BaseEstimator):
         Responses-API-only (OpenAI's Chat Completions rejects it outright), so
         it forces that routing even without ``web_search=True``.
 
+        ``reasoning_mode`` (e.g. ``"pro"``) defaults to ``self.reasoning_mode``
+        when not overridden. It's a Responses-API-only field with no Chat
+        Completions equivalent, so setting it also forces Responses routing;
+        it's sent alongside ``reasoning_effort`` as ``{"effort": ..., "mode":
+        ...}``.
+
         ``web_search_config`` merges extra keys into the Responses API's
         ``web_search`` tool dict (e.g. ``search_context_size``, ``filters``)
         for the OpenAI-only Responses API path — Gemini's grounding tool has
@@ -328,6 +338,8 @@ class BaseSkribeEstimator(BaseEstimator):
 
         if reasoning_effort is None:
             reasoning_effort = self.reasoning_effort
+        if reasoning_mode is None:
+            reasoning_mode = self.reasoning_mode
 
         if self.verbose:
             logger.info("[Prompt to LLM]\n%s", prompt)
@@ -339,7 +351,12 @@ class BaseSkribeEstimator(BaseEstimator):
         for attempt in range(_MAX_RATE_LIMIT_RETRIES + 1):
             try:
                 return self._dispatch_llm_call(
-                    prompt, model, web_search, reasoning_effort, web_search_config
+                    prompt,
+                    model,
+                    web_search,
+                    reasoning_effort,
+                    web_search_config,
+                    reasoning_mode,
                 )
             except litellm.RateLimitError as e:
                 is_last_attempt = attempt == _MAX_RATE_LIMIT_RETRIES
@@ -373,6 +390,7 @@ class BaseSkribeEstimator(BaseEstimator):
         web_search: bool,
         reasoning_effort: Optional[str],
         web_search_config: Optional[dict],
+        reasoning_mode: Optional[str] = None,
     ) -> str:
         """One attempt at the actual litellm request -- factored out of
         _call_llm so its retry loop can resend the same prompt on a
@@ -380,17 +398,25 @@ class BaseSkribeEstimator(BaseEstimator):
         branching."""
         import litellm
 
-        # "max" reasoning_effort is Responses-API-only -- Chat Completions
-        # rejects it outright ("Supported values are: none, low, medium,
-        # high, xhigh"). Route there even without web_search=True, since
-        # requiring an unrelated feature flag to unlock an effort level
-        # would be surprising.
-        needs_responses_api = reasoning_effort == "max" or (
-            web_search and model in self._WEB_SEARCH_RESPONSES_API_MODELS
+        # "max" reasoning_effort and reasoning_mode (e.g. "pro") are both
+        # Responses-API-only -- Chat Completions rejects "max" outright
+        # ("Supported values are: none, low, medium, high, xhigh") and has no
+        # "mode" concept at all. Route there even without web_search=True,
+        # since requiring an unrelated feature flag to unlock a reasoning
+        # setting would be surprising.
+        needs_responses_api = (
+            reasoning_effort == "max"
+            or reasoning_mode is not None
+            or (web_search and model in self._WEB_SEARCH_RESPONSES_API_MODELS)
         )
         if needs_responses_api:
             responses_kwargs: dict = {}
-            if reasoning_effort is not None:
+            if reasoning_mode is not None:
+                responses_kwargs["reasoning_effort"] = {
+                    "effort": reasoning_effort or "medium",
+                    "mode": reasoning_mode,
+                }
+            elif reasoning_effort is not None:
                 responses_kwargs["reasoning_effort"] = reasoning_effort
             if web_search:
                 web_search_tool = {"type": "web_search", **(web_search_config or {})}

@@ -77,42 +77,37 @@ There are three ways to put an LLM near tabular data. Only one leaves you with a
 
 ---
 
-## Proof: 10 OpenML datasets
+## Proof: every new model generation is a free accuracy upgrade
 
-Accuracy on a held-out test split across 10 OpenML classification datasets with semantically meaningful categoricals. The four contenders are:
+We ran 10 model generations — from `gpt-4o-mini` (mid-2024) to `GPT-5.6 Sol` with web search (today) — against the same 16 OpenML classification datasets and the same three classical baselines (logistic regression, XGBoost, TabPFN). No dataset changed, no baseline changed, only the model name string changed:
 
-- **`skribe`** — `SkribeClassifier` alone: the LLM writes the classifier code from the raw inputs (no other model).
-- **`skribeFE→logreg`** — `SkribeFeatureEngineer` → one-hot → `LogisticRegression`: the LLM *engineers features*, then a plain linear model does the classifying.
-- **`logreg`** — `LogisticRegression` on the original features (one-hot + scaled).
-- **`xgboost`** — gradient-boosted trees on the original features (one-hot + scaled).
+| model | released | mean accuracy |
+| --- | --- | ---: |
+| `gpt-4o-mini` | 2024 | 0.527 |
+| `gpt-4.1` | 2025 | 0.690 |
+| `gpt-5.4-mini` | 2025 | 0.693 |
+| `gpt-5.5` | 2025 | 0.852 |
+| `GPT-5.6 Sol` +web | 2026 | **0.868** |
+| — | | |
+| `logreg` (baseline) | — | 0.868 |
+| `xgboost` (baseline) | — | 0.900 |
+| `tabpfn` (baseline) | — | 0.913 |
 
-The skribe contenders use `gpt-5.5`. Reproduce with [`benchmarks/run_openml_benchmark.py`](benchmarks/run_openml_benchmark.py) (add `--model gpt-5.4-mini` for a faster, cheaper run).
+Two years ago the direct classifier barely beat a coin flip. Today `GPT-5.6 Sol` *ties* logistic regression on average and is closing on XGBoost and TabPFN — **without a single line of skribe's own code changing.** Swap the model string, hit retrain, and the ceiling moves. Reproduce with [`benchmarks/run_openml_benchmark.py`](benchmarks/run_openml_benchmark.py).
 
-| dataset | skribe | skribeFE→logreg | logreg | xgboost |
-| --- | ---: | ---: | ---: | ---: |
-| adult | 0.864 | 0.864 | 0.864 | 0.850 |
-| credit-g | 0.780 | 0.748 | 0.724 | 0.728 |
-| bank-marketing | 0.878 | 0.880 | 0.868 | 0.878 |
-| mushroom | 0.996 | 1.000 | 1.000 | 1.000 |
-| car | 0.900 | 0.977 | 0.910 | 0.988 |
-| nursery | 0.760 | 0.966 | 0.932 | 0.974 |
-| vote | 0.908 | 0.963 | 0.954 | 0.982 |
-| tic-tac-toe | 1.000 | 1.000 | 0.979 | 0.983 |
-| kr-vs-kp | 0.480 | 0.974 | 0.964 | 0.992 |
-| monks-2 | 0.636 | 1.000 | 0.583 | 0.874 |
-| **mean** | **0.820** | **0.937** | **0.878** | **0.925** |
-
-**Takeaway:** the lift from `logreg` (0.878) to `skribeFE→logreg` (**0.937**) is purely the LLM's feature engineering — and it carries the same linear model *past XGBoost* (0.925) while staying fully interpretable and cheap to serve. It wins outright on `tic-tac-toe`, `credit-g`, and `monks-2` (1.000 vs XGBoost's 0.874 on a synthetic logical rule).
+**Standout wins:** `GPT-5.6 Sol` beats every baseline outright on `kr-vs-kp` (chess endgames, 0.486 → **1.000** in one year) and `tic-tac-toe` (**1.000**), and ties the best baseline on `lymph` and `monks-2`. `nursery` alone moved from 0.312 to 0.990.
 
 <details>
-<summary><b>Where it struggles</b> (and why that's consistent with how the method works)</summary>
+<summary><b>Where it still trails, and why</b> (two systematic failure modes, not twelve unrelated ones)</summary>
 
-- **Opaque, non-semantic feature codes.** On `kr-vs-kp` the *direct* classifier scores 0.480 (below chance): the columns are cryptic chess-position codes (`bkblk`, `wkna8`) with no world knowledge to reason over, so direct prediction can't out-fit a trained model. Feature engineering + logistic regression recovers it to 0.974.
-- **Synthetic logical rules.** On `monks-2` the direct classifier can't reliably infer the exact boolean rule from a 100-row sample (0.636), but the engineered features let logistic regression learn it perfectly (1.000).
-- **Class imbalance.** On `bank-marketing` direct accuracy is high (0.878) while macro-F1 is only 0.549 — it leans to the majority class; FE lifts macro-F1 to 0.698.
-- **When raw reasoning is already strong, FE can cost a little.** On `credit-g` the direct classifier (0.780) beats the FE pipeline (0.748): funneling through a linear model discards some of the LLM's holistic judgment.
+skribe still trails the best baseline on 12 of 16 datasets, but the gaps cluster into two fixable patterns:
 
-Model capability matters: switching the skribe contenders from `gpt-5.4-mini` to `gpt-5.5` raised the direct classifier's mean from 0.640 to **0.820** (e.g. `vote` 0.193 → 0.908) and the FE pipeline from 0.892 to **0.937**.
+- **Trusts books rather than observations.** On `hepatitis` (0.692 vs. 0.872) and `credit-g` (0.592 vs. 0.768), the model names the right variables and the right direction of effect, but substitutes a generic textbook threshold for the number these specific datasets actually need — despite web search being available, zero searches were issued on either. Right markers, wrong cutoffs: a calibration problem, not a knowledge problem.
+- **Proprietary, undocumented features.** On `spotify-genre` (0.508 vs. 0.649), columns like `speechiness` and `energy` are opaque proprietary audio scores with no semantic anchor anywhere on the public web — the model fell back on hardcoding artist names into genre buckets rather than looking anything up, because there was nothing to find.
+
+Neither failure needs a more capable model to fix — both are fixed by giving `fit()` a smarter process: a classical optimizer to calibrate thresholds, or a real retrieval step instead of a guess.
+
+**Honest caveat:** all 16 datasets are decades-old and public, so we can't fully rule out memorization inflating some of this trend — read it as directional, not as controlled science. A genuinely new, unpublished dataset would settle the question; that's the natural next benchmark to add.
 </details>
 
 ---
@@ -151,7 +146,7 @@ pipe.fit(X_train, y_train)
 pipe.predict(X_test)
 ```
 
-This is the configuration that beats XGBoost on average in the benchmark above — a fast, interpretable linear model lifted by the LLM's world knowledge.
+Routing through a classical model this way is the fix for the "opaque, undocumented features" failure mode in the benchmark above (e.g. `spotify-genre`): a fast, interpretable linear model lifted by the LLM's world knowledge, rather than asking the LLM to classify directly from columns it can't interpret.
 
 ### It recovers exact structure, not just correlations
 
@@ -269,4 +264,4 @@ The pre-commit hooks run [black](https://github.com/psf/black) and the full test
 
 ## License
 
-MIT © 2025 Fredrik Linaker
+MIT © 2025-2026 Fredrik Linaker

@@ -8,13 +8,13 @@ How to cut a new release to GitHub and PyPI. Versioning follows
 
 1. Bump `__version__` in `skribe/version.py`.
 2. Add a dated section to `CHANGELOG.md` (Added / Changed / Fixed).
-3. Update "Current stable release" in `ROADMAP.md`.
+3. Update "Current stable release" in `private/ROADMAP.md` (not tracked in git).
 4. Commit. The pre-commit gate runs `black` and the full live-LLM test suite
    (using `gpt-5.4-mini` via `tests/conftest.py`), so `OPENAI_API_KEY` must be
    set in the environment.
 
 ```bash
-git add skribe/version.py CHANGELOG.md ROADMAP.md
+git add skribe/version.py CHANGELOG.md
 git commit -m "Release vX.Y.Z: <summary>"
 ```
 

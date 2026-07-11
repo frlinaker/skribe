@@ -34,6 +34,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ### Fixed
 - `safe_exec_fn` no longer corrupts free-text feature values that happen to
   look numeric
+- Packaging: `pyproject.toml`'s package discovery switched from an exclude
+  list (`tests`, `examples`) to an explicit include list (`skribe` only) —
+  setuptools' flat-layout auto-discovery was sweeping up every other
+  top-level directory with `.py` files in it (`benchmarks/`, `artifacts/`,
+  a `tmp/` scratch dir) as if they were installable packages, shipping them
+  in the wheel
 
 ---
 

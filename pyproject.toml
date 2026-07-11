@@ -35,7 +35,7 @@ skribe = "skribe.cli:main"
 version = { attr = "skribe.version.__version__" }
 
 [tool.setuptools.packages.find]
-exclude = ["tests", "tests.*", "examples", "examples.*"]
+include = ["skribe", "skribe.*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

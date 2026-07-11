@@ -5,6 +5,38 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.2.0] — 2026-07-11 — reliability, reasoning controls & fit-time diagnostics
+### Added
+- `llm_timeout`, `reasoning_effort`, and `reasoning_mode` constructor params on
+  the estimators, threaded through to the underlying litellm/Responses API
+  calls (`reasoning_mode` supports OpenAI's "pro" tier; `reasoning_effort`
+  supports `"max"` via the Responses API)
+- `fit_log_`: captures fit-time retry/error history and, when `web_search=True`,
+  the search evidence (citations, search-call counts) used while generating code
+- Static AST check for unresolved names in generated code, with "did you mean"
+  suggestions and argument runtime types surfaced in fit-time retry feedback
+- Automatic retry on `litellm.RateLimitError` instead of sleeping then failing
+
+### Changed
+- The classifier's fallback/default prediction now states the true majority
+  class (regressor: median) in the prompt instead of always defaulting to
+  code `0` — the class codes aren't ordered by frequency, so a generic
+  "default to 0" instruction could steer the LLM toward a fallback that
+  fires on every unmatched input and dominates accuracy even when the
+  matched-branch logic is correct
+- Context pre-pass no longer fabricates column/value semantics or class-label
+  mappings it wasn't given; ambiguous label mappings and uncapped
+  high-cardinality columns are now handled explicitly
+- `gpt-5.4-mini` context-window truncation now uses the API-reported limit
+  instead of a hardcoded estimate
+- Entire codebase reformatted with black/isort plus safe ruff auto-fixes
+
+### Fixed
+- `safe_exec_fn` no longer corrupts free-text feature values that happen to
+  look numeric
+
+---
+
 ## [0.1.0] — 2026-07-06 — rename to skribe (PyPI v0.1.0)
 ### Changed
 - Package renamed from `promptlearn` to `skribe`. All public classes renamed:

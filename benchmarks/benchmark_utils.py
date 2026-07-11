@@ -14,6 +14,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import textalloc as ta
 import yaml
 from adjustText import adjust_text
 from sklearn.datasets import fetch_openml
@@ -329,6 +330,18 @@ def build_summary_df(results: list[dict]) -> pd.DataFrame:
 
         meta = model_meta.get(model_id, {})
         llm_label = meta.get("label", model_id)
+        reasoning_mode = r.get("reasoning_mode")
+        reasoning_effort = r.get("reasoning_effort")
+        # A non-default reasoning_mode/effort (e.g. "pro", "xhigh") shares
+        # model_id with the plain run, so without this suffix its rows would
+        # collide with the plain run's in groupby/cummax (same provider, same
+        # release_date) -- distinguishing the label keeps point annotations
+        # from overlapping while `provider`/`learner` stay unchanged so both
+        # still merge into the same best-so-far envelope, same treatment as
+        # +web today.
+        _variant_tags = [t for t in (reasoning_mode, reasoning_effort) if t]
+        if _variant_tags:
+            llm_label = f"{llm_label} ({', '.join(_variant_tags)})"
 
         if "skribe" in r:
             m = r["skribe"]
@@ -341,6 +354,8 @@ def build_summary_df(results: list[dict]) -> pd.DataFrame:
                 "family": meta.get("family", ""),
                 "provider": meta.get("provider", "openai"),
                 "web_search": web_search,
+                "reasoning_mode": reasoning_mode,
+                "reasoning_effort": reasoning_effort,
                 "learner": f"skribe[{llm_label}]",
                 "n_rows": r.get("n_rows"),
                 "n_cols": r.get("n_cols"),
@@ -362,6 +377,38 @@ def build_summary_df(results: list[dict]) -> pd.DataFrame:
             rows.append(row)
 
     return pd.DataFrame(rows)
+
+
+def _envelope_line_xy(release_dates: pd.Series, best_so_far: pd.Series, line_end: pd.Timestamp):
+    """Build (x, y) ready for a steps-post ``ax.plot`` of a cumulative-max
+    "best so far" envelope, handling two things a plain
+    ``pd.concat([dates, best_so_far])`` misses:
+
+    1. Same-day ties: when two rows share a release_date (e.g. two models
+       launched the same day), a steps-post line has zero x-width between
+       them, so it silently jumps to the higher value with no rendered
+       vertical connector -- the lower point looks like it was never part
+       of the series at all. Insert a zero-width vertical segment (repeat
+       the date, old y then new y) so the jump renders exactly like it
+       would between any two distinct dates.
+    2. Right-edge extension: the "best so far" value is still current even
+       after the newest model, so append line_end at the final value —
+       otherwise the line stops dead at the last release date instead of
+       reaching the plot's right border.
+    """
+    xs: list = []
+    ys: list = []
+    prev_y = None
+    for x, y in zip(release_dates, best_so_far):
+        if xs and x == xs[-1] and prev_y is not None and y != prev_y:
+            xs.append(x)
+            ys.append(prev_y)
+        xs.append(x)
+        ys.append(y)
+        prev_y = y
+    xs.append(line_end)
+    ys.append(prev_y)
+    return xs, ys
 
 
 def plot_progression(df: pd.DataFrame, output_dir: Path):
@@ -479,30 +526,24 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
     if "web_search" not in pl_data.columns:
         pl_data["web_search"] = False
 
-    # Vertical gap (points, screen units) between a dot and its label's bottom
-    # edge — without this, va="bottom" anchors the label right at the dot's
-    # center, so the marker overlaps the label's lower half.
-    _LABEL_Y_OFFSET_PT = 5
-
-    # Manual per-label nudges for spots the generic overlap logic below
-    # doesn't handle well (e.g. a label sitting on top of a neighboring dot
-    # rather than another label). xy offsets are in points; "bg" adds a white
-    # background for labels crossing a busy line/other label.
-    _LABEL_OVERRIDES = {
-        "Gemini 2.5 Flash": {"dx": -22},
-        "Gemini 2.5 Pro": {"dx": -10},
-    }
-
-    _annotation_texts: list = []
     _scatter_objects: list = []
+    _label_texts: list = []
+    _label_colors: list = []
+    _annotation_targets: list = []
 
     if not pl_data.empty:
-        # Split standard vs web-search rows
-        pl_standard = pl_data[~pl_data["web_search"].fillna(False)].copy()
-        pl_web = pl_data[pl_data["web_search"].fillna(False)].copy()
-
-        for provider, grp in pl_standard.groupby("provider"):
-            grp = grp.sort_values("release_date").reset_index(drop=True)
+        # One merged envelope line per provider, combining base + web +
+        # reasoning-mode runs into a single best-so-far series -- otherwise
+        # a genuinely-best +web result (e.g. GPT-5.6 Sol +web) never shows
+        # up in the "best OpenAI has ever done" story, stranded on its own
+        # permanently-separate dotted line instead.
+        for provider, grp in pl_data.groupby("provider"):
+            # Same-day ties broken ascending by accuracy, not row order (which
+            # is otherwise arbitrary, e.g. alphabetical on model_id) -- so
+            # cummax() visits the lower value before the higher one instead
+            # of maxing out immediately and hiding the lower tie from the
+            # envelope line entirely.
+            grp = grp.sort_values(["release_date", "accuracy"]).reset_index(drop=True)
             style = provider_styles.get(
                 provider,
                 {"color": "#999", "marker": "o", "label": f"skribe / {provider}"},
@@ -519,11 +560,13 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
             # Extend the envelope flat from the newest model's release date out
             # to the plot's right edge, so the line reaches the border instead
             # of stopping dead at the last release -- the "best so far" value
-            # is still current even though no newer model has appeared.
-            line_x = pd.concat(
-                [grp["release_date"], pd.Series([_line_end])], ignore_index=True
+            # is still current even though no newer model has appeared. Also
+            # inserts a visible vertical connector for same-day releases
+            # (e.g. two models launched the same day) that a plain steps-post
+            # line would otherwise jump across with zero rendered width.
+            line_x, line_y = _envelope_line_xy(
+                grp["release_date"], grp["best_so_far"], _line_end
             )
-            line_y = pd.concat([grp["best_so_far"], pd.Series([final_acc])], ignore_index=True)
             ax.plot(
                 line_x,
                 line_y,
@@ -551,163 +594,70 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                     zorder=4,
                 )
                 _scatter_objects.append(sc)
-                override = _LABEL_OVERRIDES.get(row["llm_label"], {})
-                txt = ax.annotate(
-                    row["llm_label"],
-                    xy=(row["release_date"], row["accuracy"]),
-                    xytext=(override.get("dx", 0), _LABEL_Y_OFFSET_PT),
-                    textcoords="offset points",
-                    ha="center",
-                    va="bottom",
-                    fontsize=9.5,
-                    color=color,
-                    zorder=6,
-                    bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="none", alpha=0.85),
+                # The GPT-5.6 Sol/Terra release cluster all landed the same
+                # week, so every variant's label piles up in the same few
+                # pixels at the plot's right edge -- keep only the
+                # highest-accuracy one ("+web") labeled and leave the rest as
+                # unlabeled dots rather than let textalloc fight over space
+                # it doesn't have.
+                if row["llm_label"].startswith("GPT-5.6") and row["llm_label"] != "GPT-5.6 Sol +web":
+                    continue
+                _label_texts.append(row["llm_label"])
+                _label_colors.append(color)
+                _annotation_targets.append(
+                    (mdates.date2num(row["release_date"]), row["accuracy"])
                 )
-                _annotation_texts.append(txt)
-
-        # Web-search variants: separate dashed envelope line per provider,
-        # star markers, annotations offset to the right to avoid overlap.
-        for provider, grp in pl_web.groupby("provider"):
-            grp = grp.sort_values("release_date").reset_index(drop=True)
-            style = provider_styles.get(
-                provider,
-                {"color": "#999", "marker": "o", "label": f"skribe / {provider}"},
-            )
-            color = style["color"]
-            web_label = f"skribe {'OpenAI' if provider == 'openai' else 'Google'} +web"
-
-            grp["best_so_far"] = grp["accuracy"].cummax()
-            final_acc_web = grp["best_so_far"].iloc[-1]
-            # Same right-edge extension as the standard envelope above.
-            web_line_x = pd.concat(
-                [grp["release_date"], pd.Series([_line_end])], ignore_index=True
-            )
-            web_line_y = pd.concat(
-                [grp["best_so_far"], pd.Series([final_acc_web])], ignore_index=True
-            )
-            ax.plot(
-                web_line_x,
-                web_line_y,
-                color=color,
-                linewidth=2.0,
-                linestyle=":",
-                drawstyle="steps-post",
-                label=f"{web_label} best ({final_acc_web:.3f})",
-                zorder=3,
-                alpha=0.85,
-            )
-
-            for _, row in grp.iterrows():
-                is_best = abs(row["accuracy"] - row["best_so_far"]) < 1e-9
-                dot_alpha = 0.9 if is_best else 0.5
-                sc = ax.scatter(
-                    row["release_date"],
-                    row["accuracy"],
-                    marker="o",
-                    s=60,
-                    facecolors="white",
-                    edgecolors=color,
-                    linewidths=1.5,
-                    alpha=dot_alpha,
-                    zorder=5,
-                )
-                _scatter_objects.append(sc)
-                override = _LABEL_OVERRIDES.get(row["llm_label"], {})
-                txt = ax.annotate(
-                    row["llm_label"],
-                    xy=(row["release_date"], row["accuracy"]),
-                    xytext=(override.get("dx", 0), _LABEL_Y_OFFSET_PT),
-                    textcoords="offset points",
-                    ha="center",
-                    va="bottom",
-                    fontsize=9.5,
-                    color=color,
-                    zorder=6,
-                    bbox=dict(boxstyle="round,pad=0.15", fc="white", ec="none", alpha=0.85),
-                )
-                _annotation_texts.append(txt)
 
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
     ax.xaxis.set_major_locator(mdates.AutoDateLocator(minticks=4, maxticks=10))
     fig.autofmt_xdate(rotation=30)
     ax.yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1.0, decimals=0))
-    all_acc = pl_data["accuracy"]
-    # Extra top margin so labels for the top-right cluster have room to spread.
-    ax.set_ylim(max(0.0, all_acc.min() - 0.08), min(1.05, all_acc.max() + 0.20))
+    ax.set_ylim(0.45, 1.0)
     # Pin the right edge to the same _line_end the envelope lines were
     # extended to above, so the lines visually reach the border instead of
     # stopping short of it.
     x_min, _ = ax.get_xlim()
     ax.set_xlim(x_min, _line_end)
 
-    if _annotation_texts:
-        # Collect scatter x/y coords so adjust_text can repel labels from points.
-        _pt_x = [sc.get_offsets()[:, 0].tolist() for sc in _scatter_objects]
-        _pt_x = [x for sub in _pt_x for x in sub]
-        _pt_y = [sc.get_offsets()[:, 1].tolist() for sc in _scatter_objects]
-        _pt_y = [y for sub in _pt_y for y in sub]
-
-        # Add phantom points along each baseline so labels are repelled from them.
-        if _baseline_ys and _pt_x:
-            import numpy as _np
-
-            x_min, x_max = min(_pt_x), max(_pt_x)
-            _phantom_x = _np.linspace(x_min, x_max, 30).tolist()
-            for _by in _baseline_ys:
-                _pt_x.extend(_phantom_x)
-                _pt_y.extend([_by] * 30)
-
-        # Only let adjust_text move labels that actually overlap another label's
-        # rendered bounding box — everything else keeps its default top-center
-        # position over its dot. adjust_text's force-based physics nudges labels
-        # even without a real collision (mainly via the "explode" pre-step), so
-        # filtering to genuinely crowded pairs first avoids moving isolated
-        # labels (e.g. GPT-4o, Gemini 2.5 Flash Lite) for no reason.
-        fig.canvas.draw()
-        _boxes = [
-            t.get_window_extent(renderer=fig.canvas.get_renderer()) for t in _annotation_texts
-        ]
-        _crowded = [
-            txt
-            for i, txt in enumerate(_annotation_texts)
-            if any(
-                _boxes[i].expanded(1.15, 1.6).overlaps(_boxes[j])
-                for j in range(len(_boxes))
-                if j != i
-            )
-        ]
-
-        if _crowded:
-            adjust_text(
-                _crowded,
-                x=_pt_x,
-                y=_pt_y,
-                ax=ax,
-                expand=(2.0, 2.0),
-                force_text=(1.5, 1.5),
-                force_points=(2.0, 2.0),
-                force_pull=(0.5, 0.5),
-                avoid_self=True,
-                only_move={"text": "xy", "points": "xy"},
-            )
-            # adjust_text's repulsion can still push a label's bounding box past
-            # the axes' data limits (e.g. dots pinned at the right edge, like
-            # today's newest-release cluster, have nowhere to repel to but
-            # further right) -- ensure_inside_axes only nudges the anchor point,
-            # not the full rendered box, so clamp explicitly as a backstop.
-            fig.canvas.draw()
-            x0, x1 = ax.get_xlim()
-            y0, y1 = ax.get_ylim()
-            inv = ax.transData.inverted()
-            for txt in _crowded:
-                bbox = txt.get_window_extent(renderer=fig.canvas.get_renderer())
-                (bx0, by0), (bx1, by1) = inv.transform(bbox)
-                dx = min(0.0, x1 - bx1) + max(0.0, x0 - bx0)
-                dy = min(0.0, y1 - by1) + max(0.0, y0 - by0)
-                if dx or dy:
-                    tx, ty = txt.get_position()
-                    txt.set_position((tx + dx, ty + dy))
+    if _label_texts:
+        # textalloc places each label at the first free candidate slot near
+        # its anchor point (bounded by max_distance), drawing a thin leader
+        # line back to the point only when the label actually had to move --
+        # this structurally can't "fling" a label across the chart the way
+        # adjustText's force physics could for a dense same-day cluster.
+        _target_x = [t[0] for t in _annotation_targets]
+        _target_y = [t[1] for t in _annotation_targets]
+        # Marker radius in display pixels (s=60 -> area in points^2 for every
+        # dot drawn above), so textalloc treats each dot as an actual disc to
+        # avoid rather than a zero-size point -- otherwise a label can be
+        # placed with its text centered right on top of another series' dot.
+        _marker_radius_px = np.sqrt(60) / 2 * fig.dpi / 72.0
+        ta.allocate(
+            ax,
+            _target_x,
+            _target_y,
+            _label_texts,
+            x_scatter=_target_x,
+            y_scatter=_target_y,
+            scatter_sizes=[_marker_radius_px] * len(_target_x),
+            y_lines=[[_by, _by] for _by in _baseline_ys] if _baseline_ys else None,
+            x_lines=(
+                [[min(_target_x), max(_target_x)] for _ in _baseline_ys]
+                if _baseline_ys
+                else None
+            ),
+            textsize=9.5,
+            textcolor=_label_colors,
+            linecolor=_label_colors,
+            linewidth=0.7,
+            min_distance=0.015,
+            max_distance=0.4,
+            margin=0.008,
+            nbr_candidates=1000,
+            avoid_label_lines_overlap=True,
+            avoid_crossing_label_lines=True,
+            bbox=dict(boxstyle="round,pad=0.35", fc="white", ec="none", alpha=0.85),
+        )
     ax.set_xlabel("Model release date", fontsize=12)
     ax.set_ylabel(f"Mean accuracy ({n_datasets} datasets)", fontsize=12)
     ax.set_title(
@@ -1005,42 +955,61 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                 if pl_dates.empty:
                     continue
                 x_min = pl_dates.min()
-                x_max = pl_dates.max()
                 ax.plot(
-                    [x_min, x_max],
+                    [x_min, _line_end],
                     [val, val],
                     color=color,
                     linewidth=lw,
                     linestyle=ls,
                     label=f"{learner} ({val:.3f})",
+                    zorder=1,
                 )
                 _ds_baseline_ys.append(val)
 
-            # skribe — solid envelope line per provider (base), dotted for +web.
-            # Final accuracy shown in legend label; no inline text annotations.
+            # skribe — one solid envelope line per provider, combining base
+            # and +web runs into a single best-so-far series. web vs
+            # non-web is not visually distinguished on the line/markers;
+            # it's only visible via hover/legend.
             pl_ds = ds_df[ds_df["learner"].str.startswith("skribe[")].reset_index(drop=True).copy()
-            if "web_search" not in pl_ds.columns:
-                pl_ds["web_search"] = False
-            pl_ds["web_search"] = pl_ds["web_search"].fillna(False).astype(bool)
             pl_ds["release_date"] = pd.to_datetime(pl_ds["release_date"])
             ds_provider_styles = {
                 "openai": {"color": "#D65F5F", "label": "OpenAI GPT"},
                 "google": {"color": "#4285F4", "label": "Gemini"},
             }
-            pl_ds_base = pl_ds[~pl_ds["web_search"]].copy()
-            pl_ds_web = pl_ds[pl_ds["web_search"]].copy()
 
             ds_acc = ds_df["accuracy"]
-            ax.set_ylim(max(0.0, ds_acc.min() - 0.08), min(1.05, ds_acc.max() + 0.08))
+            # Extra top margin (vs. a plain +0.08) so labels for a tightly
+            # clustered top row -- e.g. several near-100%-accuracy models on
+            # an easy dataset -- have vertical room to stack instead of
+            # fighting for space right at the axes' edge.
+            ax.set_ylim(max(0.0, ds_acc.min() - 0.08), min(1.15, ds_acc.max() + 0.18))
 
-            for provider, grp in pl_ds_base.groupby("provider"):
-                grp = grp.sort_values("release_date").reset_index(drop=True)
+            _ds_label_texts: list = []
+            _ds_label_colors: list = []
+            _ds_target_x: list = []
+            _ds_target_y: list = []
+
+            for provider, grp in pl_ds.groupby("provider"):
+                # Same-day ties broken ascending by accuracy, not row order
+                # (which is otherwise arbitrary, e.g. alphabetical on
+                # model_id) -- so cummax() visits the lower value before the
+                # higher one instead of maxing out immediately and hiding
+                # the lower tie from the envelope line entirely.
+                grp = grp.sort_values(["release_date", "accuracy"]).reset_index(drop=True)
                 pstyle = ds_provider_styles.get(provider, {"color": "#999", "label": provider})
                 grp["best_so_far"] = grp["accuracy"].cummax()
-                final_acc = grp["accuracy"].iloc[-1]
+                final_acc = grp["best_so_far"].iloc[-1]
+                # Extend flat to the same right edge as the aggregate chart
+                # above, so the line reaches the border instead of stopping
+                # dead at the last release, and insert a visible vertical
+                # connector for same-day releases instead of a zero-width
+                # jump that leaves the lower point looking disconnected.
+                line_x, line_y = _envelope_line_xy(
+                    grp["release_date"], grp["best_so_far"], _line_end
+                )
                 ax.plot(
-                    grp["release_date"],
-                    grp["best_so_far"],
+                    line_x,
+                    line_y,
                     color=pstyle["color"],
                     linewidth=2.2,
                     linestyle="-",
@@ -1059,41 +1028,55 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                         alpha=1.0 if is_best else 0.45,
                         zorder=4,
                     )
-
-            for provider, grp in pl_ds_web.groupby("provider"):
-                grp = grp.sort_values("release_date").reset_index(drop=True)
-                pstyle = ds_provider_styles.get(provider, {"color": "#999", "label": provider})
-                color = pstyle["color"]
-                grp["best_so_far"] = grp["accuracy"].cummax()
-                final_acc = grp["accuracy"].iloc[-1]
-                ax.plot(
-                    grp["release_date"],
-                    grp["best_so_far"],
-                    color=color,
-                    linewidth=1.8,
-                    linestyle=":",
-                    drawstyle="steps-post",
-                    label=f"skribe/{pstyle['label']} +web ({final_acc:.3f})",
-                    zorder=3,
-                    alpha=0.85,
-                )
-                for _, row in grp.iterrows():
-                    is_best = abs(row["accuracy"] - row["best_so_far"]) < 1e-9
-                    ax.scatter(
-                        row["release_date"],
-                        row["accuracy"],
-                        marker="o",
-                        s=40,
-                        facecolors="white",
-                        edgecolors=color,
-                        linewidths=1.2,
-                        alpha=0.85 if is_best else 0.4,
-                        zorder=5,
-                    )
+                    _ds_label_texts.append(row["llm_label"])
+                    _ds_label_colors.append(pstyle["color"])
+                    _ds_target_x.append(mdates.date2num(row["release_date"]))
+                    _ds_target_y.append(row["accuracy"])
 
             ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
             ax.xaxis.set_major_locator(mdates.AutoDateLocator(minticks=2, maxticks=5))
             ax.yaxis.set_major_formatter(mticker.PercentFormatter(xmax=1.0, decimals=0))
+            # Pin the right edge to the same _line_end the envelope lines
+            # were extended to above, so the lines visually reach the
+            # border instead of stopping short of it.
+            _ds_x_min, _ = ax.get_xlim()
+            ax.set_xlim(_ds_x_min, _line_end)
+
+            if _ds_label_texts:
+                # Same textalloc-based placement as the aggregate chart --
+                # labels default to sitting near their dot and only move
+                # when actually crowded, with a thin leader line drawn back
+                # when they do.
+                _ds_marker_radius_px = np.sqrt(40) / 2 * fig5.dpi / 72.0
+                ta.allocate(
+                    ax,
+                    _ds_target_x,
+                    _ds_target_y,
+                    _ds_label_texts,
+                    x_scatter=_ds_target_x,
+                    y_scatter=_ds_target_y,
+                    scatter_sizes=[_ds_marker_radius_px] * len(_ds_target_x),
+                    y_lines=(
+                        [[_by, _by] for _by in _ds_baseline_ys] if _ds_baseline_ys else None
+                    ),
+                    x_lines=(
+                        [[min(_ds_target_x), max(_ds_target_x)] for _ in _ds_baseline_ys]
+                        if _ds_baseline_ys
+                        else None
+                    ),
+                    textsize=6.5,
+                    textcolor=_ds_label_colors,
+                    linecolor=_ds_label_colors,
+                    linewidth=0.6,
+                    min_distance=0.02,
+                    max_distance=0.6,
+                    margin=0.008,
+                    nbr_candidates=2000,
+                    avoid_label_lines_overlap=True,
+                    avoid_crossing_label_lines=True,
+                    bbox=dict(boxstyle="round,pad=0.2", fc="white", ec="none", alpha=0.85),
+                )
+
             ax.set_title(dataset, fontsize=11, fontweight="bold")
             _h, _lb = ax.get_legend_handles_labels()
             if _h:
@@ -1126,6 +1109,69 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
         fig5.savefig(out5, dpi=150, bbox_inches="tight")
         logger.info("Saved per-dataset timelines → %s", out5)
         plt.close(fig5)
+
+    # ── 6. Overview ranking: every baseline + every skribe variant, sorted ──
+    _overview_rows = []
+    for _name, _bdata, _color in [
+        ("Logistic Regression", lr_data, "#4878CF"),
+        ("XGBoost", xgb_data, "#6ACC65"),
+        ("TabPFN", tabpfn_data, "#FF7F0E"),
+    ]:
+        if not _bdata.empty:
+            _overview_rows.append(
+                {"label": _name, "accuracy": _bdata["accuracy"].mean(), "color": _color, "kind": "baseline"}
+            )
+    for (_label, _provider), _grp in pl_df.groupby(["llm_label", "provider"]):
+        _overview_rows.append(
+            {
+                "label": _label,
+                "accuracy": _grp["accuracy"].mean(),
+                "color": provider_styles.get(_provider, {"color": "#999"})["color"],
+                "kind": "skribe",
+            }
+        )
+
+    if _overview_rows:
+        overview_df = pd.DataFrame(_overview_rows).sort_values("accuracy", ascending=False)
+        n_bars = len(overview_df)
+        fig6, ax6 = plt.subplots(figsize=(10, max(6, n_bars * 0.4)))
+        y_pos = np.arange(n_bars)[::-1]
+        # Baselines get a hatch pattern so they read as structurally different
+        # from skribe/LLM variants at a glance, not just by color.
+        for y, (_, row) in zip(y_pos, overview_df.iterrows()):
+            ax6.barh(
+                y,
+                row["accuracy"],
+                color=row["color"],
+                hatch="//" if row["kind"] == "baseline" else "",
+                edgecolor="white" if row["kind"] == "baseline" else "none",
+                linewidth=0.5,
+                zorder=3,
+            )
+            ax6.text(
+                row["accuracy"] + 0.005,
+                y,
+                f"{row['accuracy']:.3f}",
+                va="center",
+                ha="left",
+                fontsize=9,
+            )
+        ax6.set_yticks(y_pos)
+        ax6.set_yticklabels(overview_df["label"].tolist(), fontsize=9.5)
+        ax6.set_xlim(0, min(1.08, overview_df["accuracy"].max() + 0.08))
+        ax6.xaxis.set_major_formatter(mticker.PercentFormatter(xmax=1.0, decimals=0))
+        ax6.set_xlabel(f"Mean accuracy ({n_datasets} datasets)", fontsize=12)
+        ax6.set_title(
+            "Overview: every baseline and skribe model/variant, best first\n"
+            "// hatch = classical ML baseline  ·  solid = skribe (LLM) variant",
+            fontsize=12,
+        )
+        ax6.grid(axis="x", alpha=0.18)
+        fig6.tight_layout()
+        out6 = output_dir / "overview_ranking.png"
+        fig6.savefig(out6, dpi=150)
+        logger.info("Saved overview ranking → %s", out6)
+        plt.close(fig6)
 
 
 def print_summary_table(df: pd.DataFrame):

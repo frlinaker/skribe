@@ -5,3 +5,5 @@ google-cloud-aiplatform>=1.159.0
 matplotlib>=3.8.0
 seaborn>=0.13.0
 PyYAML>=6.0
+textalloc>=1.2.3
+adjustText>=1.1.0

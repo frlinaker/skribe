@@ -254,11 +254,15 @@ Demos cover zero-row fitting, `.sample()`, joblib round-tripping, world-knowledg
 ## 🛠 Development
 
 ```bash
-pip install -r requirements-dev.txt
-pre-commit install
+git clone https://github.com/frlinaker/skribe.git
+cd skribe
+python -m venv .venv
+.venv/bin/pip install -e .
+.venv/bin/pip install -r requirements-dev.txt -r requirements-benchmark.txt
+.venv/bin/pre-commit install
 ```
 
-The pre-commit hooks run [black](https://github.com/psf/black) and the full test suite, both of which must pass before a commit is allowed. The suite makes live LLM calls, so it needs a provider key (e.g. `OPENAI_API_KEY`); it runs against `gpt-5.4-mini` by default for speed. Release steps are documented in [`RELEASING.md`](RELEASING.md).
+The pre-commit hooks run [black](https://github.com/psf/black) and the full test suite, both of which must pass before a commit is allowed. The pytest hook specifically invokes `.venv/bin/python`, so the venv must be at `.venv` and skribe must be installed into it (`pip install -e .` above) for the hooks to find both. `requirements-benchmark.txt` is needed too — `tests/test_benchmark_harness.py` imports the benchmark scripts, which pull in plotting/ML libraries the dev requirements don't cover. The suite makes live LLM calls, so it needs a provider key (e.g. `OPENAI_API_KEY`); it runs against `gpt-5.4-mini` by default for speed. Release steps are documented in [`RELEASING.md`](RELEASING.md).
 
 ---
 

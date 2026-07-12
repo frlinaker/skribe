@@ -15,6 +15,54 @@ pip install -r requirements-benchmark.txt
 the `skribe` package itself, so `pip install -e .` must come first or
 `run_openml_fit.py --model skribe ...` fails with `ModuleNotFoundError`.
 
+14 of the 16 datasets are fetched automatically from OpenML at run time (via
+`sklearn.datasets.fetch_openml`, which caches to disk after the first fetch —
+no setup needed). The 15th, `spotify-genre`, is `csv_path`-backed
+(`examples/external_data/spotify_genre.csv`) and is **not** included in the
+repo — `examples/external_data/` is gitignored, so a fresh clone is missing
+the file and any run touching `spotify-genre` (including the default
+`run_all_models.sh`) fails with `FileNotFoundError`. Reproduce it before
+running the benchmarks:
+
+```bash
+mkdir -p examples/external_data
+curl -sL -o /tmp/spotify_songs_raw.csv \
+  "https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2020/2020-01-21/spotify_songs.csv"
+```
+
+```python
+import pandas as pd
+
+FEATURE_COLS = [
+    "track_name", "track_artist", "track_popularity",
+    "danceability", "energy", "key", "loudness", "mode",
+    "speechiness", "acousticness", "instrumentalness",
+    "liveness", "valence", "tempo", "duration_ms",
+]
+
+# The TidyTuesday CSV has one row per (track, playlist) pairing, so the same
+# track appears once per playlist it's on -- with track_popularity and the
+# audio features identical across its duplicates, but playlist_genre/
+# playlist_name/etc. varying. config.yaml's dataset description promises
+# "each row is a unique track", so this has to collapse back down to one row
+# per track before it's usable as a classification dataset.
+raw = pd.read_csv("/tmp/spotify_songs_raw.csv").rename(columns={"playlist_genre": "genre"})
+
+# A handful of rows have nulls in feature columns (bad API scrapes upstream);
+# drop them before dedup so a null-valued duplicate can't survive by being
+# picked as the "first" occurrence of a (name, artist) pair.
+raw = raw.dropna(subset=FEATURE_COLS + ["genre"])
+
+# keep="first" reproduces examples/external_data/spotify_genre.csv exactly
+# (verified row-for-row) -- there's nothing principled about "first" over
+# "last", it's just whichever occurrence the original file happened to keep.
+deduped = raw.drop_duplicates(subset=["track_name", "track_artist"], keep="first")
+
+deduped[FEATURE_COLS + ["genre"]].to_csv(
+    "examples/external_data/spotify_genre.csv", index=False
+)
+```
+
 Environment variables (only needed for the parts you actually run):
 
 | Var | Needed for |

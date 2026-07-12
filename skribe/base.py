@@ -299,6 +299,22 @@ class BaseSkribeEstimator(BaseEstimator):
     # Union for external checks (e.g. warnings when model is unsupported).
     _WEB_SEARCH_MODELS = _WEB_SEARCH_RESPONSES_API_MODELS | _WEB_SEARCH_CHAT_COMPLETIONS_MODELS
 
+    @staticmethod
+    def _model_supports_web_search(model: str, supported: set) -> bool:
+        """Membership check that ignores an optional ``provider/`` prefix.
+
+        litellm resolves "gpt-5.6-sol" and "openai/gpt-5.6-sol" to the same
+        request, but a plain ``in`` check treats them as different strings —
+        whichever spelling isn't in ``supported`` silently disables
+        web_search with only a log warning, no error. Stripping the prefix
+        (if any) from both sides before comparing means either spelling
+        works regardless of which one happens to be in the set.
+        """
+        bare = model.split("/", 1)[-1]
+        return model in supported or bare in supported or any(
+            entry.split("/", 1)[-1] == bare for entry in supported
+        )
+
     def _record_web_search_evidence(
         self, search_call_count: Optional[int], citations: list
     ) -> None:
@@ -421,7 +437,10 @@ class BaseSkribeEstimator(BaseEstimator):
         needs_responses_api = (
             reasoning_effort == "max"
             or reasoning_mode is not None
-            or (web_search and model in self._WEB_SEARCH_RESPONSES_API_MODELS)
+            or (
+                web_search
+                and self._model_supports_web_search(model, self._WEB_SEARCH_RESPONSES_API_MODELS)
+            )
         )
         if needs_responses_api:
             responses_kwargs: dict = {}
@@ -509,7 +528,7 @@ class BaseSkribeEstimator(BaseEstimator):
 
         kwargs: dict = {}
         if web_search:
-            if model in self._WEB_SEARCH_CHAT_COMPLETIONS_MODELS:
+            if self._model_supports_web_search(model, self._WEB_SEARCH_CHAT_COMPLETIONS_MODELS):
                 kwargs["web_search_options"] = {}
             else:
                 logger.warning(

@@ -5,6 +5,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.2.1] — 2026-07-11 — web_search model-matching fix
+### Fixed
+- `web_search=True` was silently ignored (with only a log warning) for any
+  model string that didn't exactly match its registry entry's spelling —
+  e.g. `SkribeClassifier(model="gpt-5.6-sol", web_search=True)` did nothing,
+  because the registry has that model listed as `"openai/gpt-5.6-sol"` and
+  the check was an exact string match. Matching now ignores an optional
+  `provider/` prefix on either side, so `"gpt-5.6-sol"` and
+  `"openai/gpt-5.6-sol"` are recognized as the same model
+
+---
+
 ## [0.2.0] — 2026-07-11 — reliability, reasoning controls & fit-time diagnostics
 ### Added
 - `llm_timeout`, `reasoning_effort`, and `reasoning_mode` constructor params on

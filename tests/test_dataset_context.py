@@ -561,6 +561,39 @@ def test_web_search_responses_api_model(monkeypatch):
     assert {"type": "web_search"} in responses_calls[0]["tools"]
 
 
+def test_web_search_bare_model_name_matches_prefixed_registry_entry(monkeypatch):
+    """gpt-5.6-sol is registered as "openai/gpt-5.6-sol" (to match how the
+    benchmark harness invokes it), but a user typing the bare model name --
+    e.g. SkribeClassifier(model="gpt-5.6-sol", web_search=True), as shown in
+    the docs -- must still get web_search wired up. Regression test for a bug
+    where the exact-string membership check silently dropped web_search for
+    any spelling that didn't match the registry's exact prefix."""
+    clf = SkribeClassifier(model="gpt-5.6-sol", verbose=False, web_search=True)
+
+    responses_calls = []
+
+    def fake_responses(prompt, model, **kwargs):
+        responses_calls.append({"model": model, "tools": kwargs.get("tools")})
+        msg = MagicMock()
+        msg.type = "message"
+        content_part = MagicMock()
+        content_part.type = "output_text"
+        content_part.text = SIMPLE_CODE
+        msg.content = [content_part]
+        resp = MagicMock()
+        resp.output = [msg]
+        return resp
+
+    monkeypatch.setattr("litellm.responses", fake_responses)
+
+    X = pd.DataFrame({"x": [1, 2]})
+    y = pd.Series([0, 1])
+    clf.fit(X, y)
+
+    assert len(responses_calls) >= 1
+    assert {"type": "web_search"} in responses_calls[0]["tools"]
+
+
 def test_context_prepass_requests_high_search_context_size(monkeypatch):
     """The context pre-pass call (most likely to benefit from finding real
     dataset documentation) should ask for the Responses API's highest

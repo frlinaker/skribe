@@ -32,9 +32,9 @@ Set an API key for your provider (`OPENAI_API_KEY` by default — see [Providers
 
 ---
 
-## 60-second example
+## Zero-row example
 
-Fit on **column names alone — no training rows** — and let the model reason from world knowledge:
+Fit on **column names alone — no training rows** — and let the model reason from world knowledge. `fit()` calls the LLM to synthesize code, so expect it to take a minute or two (longer on a slow/loaded model) — this isn't a hang.
 
 ```python
 import pandas as pd
@@ -181,7 +181,7 @@ joblib.dump(model, "model.joblib")
 model = joblib.load("model.joblib")   # ready to predict, no LLM needed
 ```
 
-**Zero-example learning.** Call `.fit()` with just column names (no rows) and the model infers a rule from the schema and its prior knowledge — ideal for rapid prototyping (see the 60-second example).
+**Zero-example learning.** Call `.fit()` with just column names (no rows) and the model infers a rule from the schema and its prior knowledge — ideal for rapid prototyping (see the zero-row example).
 
 ---
 

@@ -7,3 +7,4 @@ seaborn>=0.13.0
 PyYAML>=6.0
 textalloc>=1.2.3
 adjustText>=1.1.0
+python-dotenv>=1.0.0

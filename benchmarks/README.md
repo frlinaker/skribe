@@ -6,8 +6,14 @@ and `tabpfn` baselines on 16 OpenML classification datasets.
 ## Setup
 
 ```bash
+pip install -e .
 pip install -r requirements-benchmark.txt
 ```
+
+`requirements-benchmark.txt` only pulls in skribe's runtime dependencies (via
+`-r requirements.txt`) plus benchmark-only libraries — it does not install
+the `skribe` package itself, so `pip install -e .` must come first or
+`run_openml_fit.py --model skribe ...` fails with `ModuleNotFoundError`.
 
 Environment variables (only needed for the parts you actually run):
 

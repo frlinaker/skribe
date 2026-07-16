@@ -71,6 +71,83 @@ models:
     supports_web: true
     web_color: "#804040"
 
+  # Anthropic Claude — ordered oldest -> newest. release_date is each
+  # model's created_at from GET /v1/models. All ten support the native
+  # web_search_20250305 server tool (see _WEB_SEARCH_ANTHROPIC_MODELS in
+  # skribe/base.py), so supports_web is true for all of them.
+  - model_id: claude-opus-4-1-20250805
+    label: Claude Opus 4.1
+    release_date: 2025-08-05
+    family: Claude 4
+    provider: anthropic
+    color: "#1cc960"
+    supports_web: true
+    web_color: "#78e8a8"
+  - model_id: claude-sonnet-4-5-20250929
+    label: Claude Sonnet 4.5
+    release_date: 2025-09-29
+    family: Claude 4
+    provider: anthropic
+    color: "#0fb554"
+    supports_web: true
+    web_color: "#68dc98"
+  - model_id: claude-haiku-4-5-20251001
+    label: Claude Haiku 4.5
+    release_date: 2025-10-15
+    family: Claude 4
+    provider: anthropic
+    color: "#08a048"
+    supports_web: true
+    web_color: "#58d088"
+  - model_id: claude-opus-4-5-20251101
+    label: Claude Opus 4.5
+    release_date: 2025-11-24
+    family: Claude 4
+    provider: anthropic
+    color: "#008c3e"
+    supports_web: true
+    web_color: "#40c078"
+  - model_id: claude-opus-4-6
+    label: Claude Opus 4.6
+    release_date: 2026-02-04
+    family: Claude 4
+    provider: anthropic
+    color: "#007834"
+    supports_web: true
+    web_color: "#30b068"
+  - model_id: claude-sonnet-4-6
+    label: Claude Sonnet 4.6
+    release_date: 2026-02-17
+    family: Claude 4
+    provider: anthropic
+    color: "#00642c"
+    supports_web: true
+    web_color: "#28a058"
+  - model_id: claude-opus-4-7
+    label: Claude Opus 4.7
+    release_date: 2026-04-14
+    family: Claude 4
+    provider: anthropic
+    color: "#005024"
+    supports_web: true
+    web_color: "#209048"
+  - model_id: claude-opus-4-8
+    label: Claude Opus 4.8
+    release_date: 2026-05-28
+    family: Claude 4
+    provider: anthropic
+    color: "#003c1c"
+    supports_web: true
+    web_color: "#188038"
+  - model_id: claude-sonnet-5
+    label: Claude Sonnet 5
+    release_date: 2026-06-29
+    family: Claude 5
+    provider: anthropic
+    color: "#00140a"
+    supports_web: true
+    web_color: "#08601c"
+
   # Google Gemini (via Vertex AI) — ordered oldest GA -> newest
   - model_id: vertex_ai/gemini-2.5-flash
     label: Gemini 2.5 Flash

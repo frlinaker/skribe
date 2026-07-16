@@ -522,6 +522,11 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
             "marker": "s",
             "label": "skribe Google",
         },
+        "anthropic": {
+            "color": "#5FA05F",
+            "marker": "^",
+            "label": "skribe Anthropic",
+        },
     }
     if "web_search" not in pl_data.columns:
         pl_data["web_search"] = False
@@ -740,7 +745,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
 
     # ── 3. All-learner bar chart: two rows (no-web / +web), columns aligned ──
     # Columns = base model labels ordered by release date; gap where no web variant.
-    _provider_bar_color = {"openai": "#D65F5F", "google": "#4285F4"}
+    _provider_bar_color = {"openai": "#D65F5F", "google": "#4285F4", "anthropic": "#5FA05F"}
     if not pl_data.empty:
         pl_bar_all = (
             pl_data.groupby(["llm_label", "release_date", "provider", "web_search"])["accuracy"]
@@ -975,6 +980,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
             ds_provider_styles = {
                 "openai": {"color": "#D65F5F", "label": "OpenAI GPT"},
                 "google": {"color": "#4285F4", "label": "Gemini"},
+                "anthropic": {"color": "#5FA05F", "label": "Claude"},
             }
 
             ds_acc = ds_df["accuracy"]

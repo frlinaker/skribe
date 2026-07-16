@@ -487,7 +487,7 @@ def test_web_search_prompt_states_precedence_over_stated_mapping(monkeypatch):
 def test_web_search_unsupported_model_warns(monkeypatch, caplog):
     import logging
 
-    clf = SkribeClassifier(model="claude-sonnet-4-6", verbose=False, web_search=True)
+    clf = SkribeClassifier(model="ollama/llama3", verbose=False, web_search=True)
 
     calls = []
 
@@ -529,6 +529,41 @@ def test_web_search_supported_model_passes_options(monkeypatch):
     clf.fit(X, y)
 
     assert "web_search_options" in calls[0]
+
+
+def test_web_search_anthropic_model_passes_tools(monkeypatch):
+    """Chat Completions path: Claude models get the native web_search tool
+    (tools=[{"type": "web_search_20250305", ...}]), not web_search_options --
+    Anthropic's litellm.completion() shape differs from the OpenAI/Gemini one."""
+    clf = SkribeClassifier(model="claude-sonnet-5", verbose=False, web_search=True)
+
+    calls = []
+
+    def fake_completion(model, messages, **kwargs):
+        calls.append(kwargs)
+        citation = {
+            "type": "web_search_result_location",
+            "url": "https://example.com/a",
+            "title": "Example",
+            "cited_text": "...",
+            "supported_text": "...",
+            "encrypted_index": "abc",
+        }
+        resp = MagicMock()
+        resp.choices[0].message.content = SIMPLE_CODE
+        resp.choices[0].message.provider_specific_fields = {"citations": [[citation]]}
+        return resp
+
+    monkeypatch.setattr("litellm.completion", fake_completion)
+
+    X = pd.DataFrame({"x": [1, 2]})
+    y = pd.Series([0, 1])
+    clf.fit(X, y)
+
+    assert calls[0]["tools"] == [{"type": "web_search_20250305", "name": "web_search"}]
+    assert "web_search_options" not in calls[0]
+    assert clf.fit_log_[-1]["stage"] == "web_search"
+    assert clf.fit_log_[-1]["citations"] == ["https://example.com/a"]
 
 
 def test_web_search_responses_api_model(monkeypatch):

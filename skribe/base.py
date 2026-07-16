@@ -73,7 +73,13 @@ _CONTEXT_LIMIT_RE = re.compile(
 # litellm.BadRequestError instead of litellm.ContextWindowExceededError --
 # seen live from openai/gpt-5.6-sol(-web) on the Responses API, which never
 # includes a numeric limit, unlike the phrasings _CONTEXT_LIMIT_RE matches.
-_UNMAPPED_CONTEXT_WINDOW_PHRASES = ("exceeds the context window of this model",)
+_UNMAPPED_CONTEXT_WINDOW_PHRASES = (
+    "exceeds the context window of this model",
+    # Anthropic Chat Completions, e.g.: "input length and `max_tokens`
+    # exceed context limit: 178902 + 32000 > 200000" -- seen live on
+    # claude-opus-4-1-20250805 for a wide/tall dataset (kr-vs-kp, 36 cols).
+    "exceed context limit",
+)
 
 
 def _is_context_window_error(e: Exception) -> bool:
@@ -296,8 +302,35 @@ class BaseSkribeEstimator(BaseEstimator):
         "vertex_ai/gemini-3.5-flash",
     }
 
+    # Anthropic models that support web search via the native
+    # tools=[{"type": "web_search_20250305", "name": "web_search"}] server
+    # tool on litellm.completion(). Distinct from _WEB_SEARCH_CHAT_COMPLETIONS_MODELS
+    # because the tool shape is different (a "tools" entry, not
+    # web_search_options={}) and citations land in a different place on the
+    # response (message.provider_specific_fields["citations"], not
+    # message.annotations). litellm.supports_web_search() doesn't yet know
+    # about this for Claude models (confirmed False as of this writing even
+    # though the raw API call works), so this allowlist is skribe's own,
+    # same as the other two above.
+    _WEB_SEARCH_ANTHROPIC_MODELS = {
+        "claude-opus-4-1-20250805",
+        "claude-sonnet-4-5-20250929",
+        "claude-haiku-4-5-20251001",
+        "claude-opus-4-5-20251101",
+        "claude-opus-4-6",
+        "claude-sonnet-4-6",
+        "claude-opus-4-7",
+        "claude-opus-4-8",
+        "claude-fable-5",
+        "claude-sonnet-5",
+    }
+
     # Union for external checks (e.g. warnings when model is unsupported).
-    _WEB_SEARCH_MODELS = _WEB_SEARCH_RESPONSES_API_MODELS | _WEB_SEARCH_CHAT_COMPLETIONS_MODELS
+    _WEB_SEARCH_MODELS = (
+        _WEB_SEARCH_RESPONSES_API_MODELS
+        | _WEB_SEARCH_CHAT_COMPLETIONS_MODELS
+        | _WEB_SEARCH_ANTHROPIC_MODELS
+    )
 
     @staticmethod
     def _model_supports_web_search(model: str, supported: set) -> bool:
@@ -530,6 +563,8 @@ class BaseSkribeEstimator(BaseEstimator):
         if web_search:
             if self._model_supports_web_search(model, self._WEB_SEARCH_CHAT_COMPLETIONS_MODELS):
                 kwargs["web_search_options"] = {}
+            elif self._model_supports_web_search(model, self._WEB_SEARCH_ANTHROPIC_MODELS):
+                kwargs["tools"] = [{"type": "web_search_20250305", "name": "web_search"}]
             else:
                 logger.warning(
                     "web_search=True requested but model %r is not in the known "
@@ -557,6 +592,20 @@ class BaseSkribeEstimator(BaseEstimator):
                     ann.get("url_citation", {}).get("url")
                     for ann in getattr(choice.message, "annotations", None) or []
                     if ann.get("url_citation", {}).get("url")
+                ]
+                self._record_web_search_evidence(None, citations)
+            elif kwargs.get("tools") is not None:
+                # Anthropic's native web search tool nests citations under
+                # provider_specific_fields["citations"] as a list of lists of
+                # dicts (one inner list per generated text block), not under
+                # message.annotations like the OpenAI/Gemini shape above.
+                provider_fields = getattr(choice.message, "provider_specific_fields", None) or {}
+                raw_citations = provider_fields.get("citations") or []
+                citations = [
+                    citation.get("url")
+                    for group in raw_citations
+                    for citation in (group or [])
+                    if citation.get("url")
                 ]
                 self._record_web_search_evidence(None, citations)
             if self.verbose:
@@ -587,6 +636,25 @@ class BaseSkribeEstimator(BaseEstimator):
                 e,
             )
             raise _ContextWindowExceeded(str(e), real_max_input_tokens)
+        except litellm.BadRequestError as e:
+            # litellm's own exception mapper doesn't recognize every
+            # provider's context-window phrasing (e.g. Anthropic's Chat
+            # Completions: "input length and `max_tokens` exceed context
+            # limit: ..."), so it surfaces here as a bare BadRequestError
+            # instead of the typed ContextWindowExceededError caught above.
+            # Check the message ourselves rather than losing
+            # shrink-and-retry entirely (same pattern as the Responses API
+            # branch above).
+            if _is_context_window_error(e):
+                logger.warning(
+                    "Context window exceeded at API level (unrecognized phrasing) — "
+                    "will reduce dataset and retry. Error: %s",
+                    e,
+                )
+                raise _ContextWindowExceeded(str(e), None)
+            logger.error("LLM call failed: %s", e)
+            self.fit_log_.append({"stage": "llm_call", "error": str(e)})
+            raise RuntimeError(f"LLM call failed: {e}")
         except litellm.RateLimitError:
             # Let _call_llm's retry loop handle this — it resends the same
             # prompt after a backoff instead of failing the whole fit.

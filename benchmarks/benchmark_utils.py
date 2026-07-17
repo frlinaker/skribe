@@ -69,6 +69,8 @@ def _build_model_progression(config: dict) -> list[dict]:
         }
         if "vertex_region" in entry:
             base["vertex_region"] = entry["vertex_region"]
+        if "api_base" in entry:
+            base["api_base"] = entry["api_base"]
         progression.append(base)
 
         if entry.get("supports_web"):
@@ -527,6 +529,11 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
             "marker": "^",
             "label": "skribe Anthropic",
         },
+        "ollama": {
+            "color": "#8E44AD",
+            "marker": "D",
+            "label": "skribe Ollama",
+        },
     }
     if "web_search" not in pl_data.columns:
         pl_data["web_search"] = False
@@ -745,7 +752,18 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
 
     # ── 3. All-learner bar chart: two rows (no-web / +web), columns aligned ──
     # Columns = base model labels ordered by release date; gap where no web variant.
-    _provider_bar_color = {"openai": "#D65F5F", "google": "#4285F4", "anthropic": "#5FA05F"}
+    _provider_bar_color = {
+        "openai": "#D65F5F",
+        "google": "#4285F4",
+        "anthropic": "#5FA05F",
+        "ollama": "#8E44AD",
+    }
+    _provider_bar_name = {
+        "openai": "OpenAI GPT",
+        "google": "Google Gemini",
+        "anthropic": "Anthropic Claude",
+        "ollama": "Ollama",
+    }
     if not pl_data.empty:
         pl_bar_all = (
             pl_data.groupby(["llm_label", "release_date", "provider", "web_search"])["accuracy"]
@@ -799,7 +817,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                     continue
                 prov = row["provider"]
                 color = _provider_bar_color.get(prov, "#999999")
-                prov_name = "OpenAI GPT" if prov == "openai" else "Google Gemini"
+                prov_name = _provider_bar_name.get(prov, prov)
                 label_str = f"skribe / {prov_name}"
                 bar = ax.bar(
                     i,
@@ -981,6 +999,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                 "openai": {"color": "#D65F5F", "label": "OpenAI GPT"},
                 "google": {"color": "#4285F4", "label": "Gemini"},
                 "anthropic": {"color": "#5FA05F", "label": "Claude"},
+                "ollama": {"color": "#8E44AD", "label": "Ollama"},
             }
 
             ds_acc = ds_df["accuracy"]

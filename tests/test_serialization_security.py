@@ -30,6 +30,7 @@ ALLOWED_STATE_FIELDS = {
     "web_search",
     "context_prepass",
     "vertex_location",
+    "api_base",
     "llm_timeout",
     "reasoning_effort",
     "reasoning_mode",

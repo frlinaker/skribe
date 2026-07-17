@@ -227,6 +227,7 @@ def run_one_skribe(
     reasoning_effort: str | None = None,
     reasoning_mode: str | None = None,
     llm_timeout: float | None = None,
+    api_base: str | None = None,
 ) -> dict:
     actual_model_id = base_model_id or (model_id.removesuffix("-web") if web_search else model_id)
     tag = f"[{dataset} × {model_id}]"
@@ -335,6 +336,8 @@ def run_one_skribe(
         )
         if llm_timeout is not None:
             clf_kwargs["llm_timeout"] = llm_timeout
+        if api_base is not None:
+            clf_kwargs["api_base"] = api_base
         clf = SkribeClassifier(**clf_kwargs)
 
         _prepass_time = [0.0]
@@ -574,6 +577,7 @@ def main(argv=None):
         vertex_region=meta.get("vertex_region"),
         web_search=meta.get("web_search", False),
         base_model_id=meta.get("base_model_id"),
+        api_base=meta.get("api_base"),
         fe_model=args.fe_model,
         skip_cache_read=args.no_cache,
         skip_context=args.skip_context,

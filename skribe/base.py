@@ -214,6 +214,7 @@ class BaseSkribeEstimator(BaseEstimator):
         llm_timeout: float = 120,
         reasoning_effort: Optional[str] = None,
         reasoning_mode: Optional[str] = None,
+        api_base: Optional[str] = None,
     ):
         self.model = model
         self.verbose = verbose
@@ -225,6 +226,7 @@ class BaseSkribeEstimator(BaseEstimator):
         self.llm_timeout = llm_timeout
         self.reasoning_effort = reasoning_effort
         self.reasoning_mode = reasoning_mode
+        self.api_base = api_base
         self.predict_fn: Optional[Callable] = None
         self.target_name_: Optional[str] = None
         self.feature_names_: Optional[list] = None
@@ -249,6 +251,7 @@ class BaseSkribeEstimator(BaseEstimator):
             "llm_timeout": self.llm_timeout,
             "reasoning_effort": self.reasoning_effort,
             "reasoning_mode": self.reasoning_mode,
+            "api_base": self.api_base,
         }
 
     # used by GridSearchCV
@@ -376,7 +379,11 @@ class BaseSkribeEstimator(BaseEstimator):
         """Call the language model via litellm, return the response text.
 
         The provider is selected by the model string, e.g. ``gpt-5.5`` (OpenAI),
-        ``claude-sonnet-4-6`` (Anthropic), or ``ollama:llama3.1`` (local Ollama).
+        ``claude-sonnet-4-6`` (Anthropic), or ``ollama:llama3.1`` (local or
+        remote Ollama — the endpoint defaults to ``http://localhost:11434``
+        unless overridden via the ``api_base`` constructor arg or the
+        ``OLLAMA_API_BASE`` environment variable, e.g. when Ollama runs on a
+        different machine reachable through an SSH tunnel).
         API keys are read from the usual per-provider environment variables.
 
         ``reasoning_effort`` (``"low"``/``"medium"``/``"high"``/etc, provider-
@@ -576,6 +583,19 @@ class BaseSkribeEstimator(BaseEstimator):
             kwargs["vertex_location"] = self.vertex_location
         if reasoning_effort is not None:
             kwargs["reasoning_effort"] = reasoning_effort
+        if model.startswith("ollama/"):
+            api_base = self.api_base or os.environ.get("OLLAMA_API_BASE")
+            if api_base:
+                kwargs["api_base"] = api_base
+            # Ollama's default context window (2048 tokens) is far too small
+            # for skribe's prompts (CSV sample + instructions can easily run
+            # into the thousands of tokens) and silently truncates rather
+            # than erroring, which manifests as malformed/incomplete
+            # generated code instead of a clear failure. Let deployments
+            # override it without a code change.
+            num_ctx = os.environ.get("OLLAMA_NUM_CTX")
+            if num_ctx:
+                kwargs["num_ctx"] = int(num_ctx)
 
         try:
             response = litellm.completion(

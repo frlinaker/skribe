@@ -66,6 +66,7 @@ class SkribeFeatureEngineer(TransformerMixin, BaseSkribeEstimator):
         llm_timeout: float = 120,
         reasoning_effort: str | None = None,
         reasoning_mode: str | None = None,
+        api_base: str | None = None,
     ):
         super().__init__(
             model=resolve_model(model),
@@ -78,6 +79,7 @@ class SkribeFeatureEngineer(TransformerMixin, BaseSkribeEstimator):
             llm_timeout=llm_timeout,
             reasoning_effort=reasoning_effort,
             reasoning_mode=reasoning_mode,
+            api_base=api_base,
         )
         self.new_feature_names_ = None
 

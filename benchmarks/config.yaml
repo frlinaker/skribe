@@ -186,6 +186,18 @@ models:
     supports_web: true
     web_color: "#5080d8"
 
+  # Ollama (local/self-hosted, no web_search support) — run via an
+  # OpenAI/Anthropic/Google-style API but reachable through OLLAMA_API_BASE
+  # (see skribe/base.py) since Ollama typically runs on a different machine
+  # than the benchmark driver (e.g. a GPU workstation reached over an SSH
+  # tunnel), not on localhost.
+  - model_id: "ollama:qwen3.6:latest"
+    label: Qwen3.6 35B-A3B
+    release_date: 2026-04-16
+    family: Qwen3.6
+    provider: ollama
+    color: "#8E44AD"
+
 # Baseline (non-LLM) learners.
 baselines:
   - name: logreg

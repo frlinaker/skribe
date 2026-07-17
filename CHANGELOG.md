@@ -5,6 +5,46 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.2.3] — 2026-07-17 — Ollama support
+### Added
+- `api_base` constructor param (also read from the `OLLAMA_API_BASE`
+  environment variable) so `model="ollama:<name>"` can point at Ollama
+  running on a different machine — e.g. a GPU workstation reached over an
+  SSH tunnel — instead of only ever assuming `http://localhost:11434`
+- `OLLAMA_NUM_CTX` environment variable to override Ollama's default context
+  window (2048 tokens), which is too small for skribe's prompts and silently
+  truncates them rather than erroring, producing malformed generated code
+  with no clear signal as to why
+
+### Fixed
+- The all-learners bar chart in `benchmarks/benchmark_utils.py` labelled
+  every non-OpenAI provider "Google Gemini" in its legend (a leftover
+  two-way ternary from before Anthropic/Ollama were added as providers)
+
+---
+
+## [0.2.2] — 2026-07-16 — Anthropic web_search support
+### Added
+- Native Anthropic `web_search_20250305` tool wired into the Chat
+  Completions dispatch path, with its own citation-extraction logic
+  (Anthropic nests citations under `provider_specific_fields`, a different
+  shape from the OpenAI/Gemini `message.annotations` convention)
+- All Claude models added to `benchmarks/config.yaml` with release dates
+  and colors so they resolve via `--llm` and appear in progression charts
+
+### Fixed
+- Context-window-exceeded detection on the Chat Completions branch: added
+  a `BadRequestError` fallback (mirroring the existing Responses API
+  branch) and recognized Anthropic's "exceed context limit" phrasing,
+  which litellm's typed `ContextWindowExceededError` doesn't catch for
+  older Claude models
+
+### Changed
+- Recolored the benchmark charts for clearer contrast: OpenAI red,
+  Anthropic green, Google blue
+
+---
+
 ## [0.2.1] — 2026-07-11 — web_search model-matching fix
 ### Fixed
 - `web_search=True` was silently ignored (with only a log warning) for any

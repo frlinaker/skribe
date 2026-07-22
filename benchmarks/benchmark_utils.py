@@ -71,6 +71,8 @@ def _build_model_progression(config: dict) -> list[dict]:
             base["vertex_region"] = entry["vertex_region"]
         if "api_base" in entry:
             base["api_base"] = entry["api_base"]
+        if "max_input_tokens" in entry:
+            base["max_input_tokens"] = entry["max_input_tokens"]
         progression.append(base)
 
         if entry.get("supports_web"):
@@ -474,7 +476,13 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
     )
 
     # ── 1. Timeline: mean accuracy vs model release date ─────────────────────
-    fig, ax = plt.subplots(figsize=(12, 6))
+    # Wide enough that textalloc has room to place labels near their dots
+    # even in the increasingly crowded recent-release cluster (many models
+    # now land within weeks of each other) -- a narrower figure forces
+    # labels far from their anchor point once the nearby candidates run out,
+    # producing a long, confusing leader line for no reason other than lack
+    # of horizontal space.
+    fig, ax = plt.subplots(figsize=(16, 6))
 
     _baseline_ys: list[float] = []
 
@@ -576,9 +584,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
             # inserts a visible vertical connector for same-day releases
             # (e.g. two models launched the same day) that a plain steps-post
             # line would otherwise jump across with zero rendered width.
-            line_x, line_y = _envelope_line_xy(
-                grp["release_date"], grp["best_so_far"], _line_end
-            )
+            line_x, line_y = _envelope_line_xy(grp["release_date"], grp["best_so_far"], _line_end)
             ax.plot(
                 line_x,
                 line_y,
@@ -612,13 +618,14 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                 # highest-accuracy one ("+web") labeled and leave the rest as
                 # unlabeled dots rather than let textalloc fight over space
                 # it doesn't have.
-                if row["llm_label"].startswith("GPT-5.6") and row["llm_label"] != "GPT-5.6 Sol +web":
+                if (
+                    row["llm_label"].startswith("GPT-5.6")
+                    and row["llm_label"] != "GPT-5.6 Sol +web"
+                ):
                     continue
                 _label_texts.append(row["llm_label"])
                 _label_colors.append(color)
-                _annotation_targets.append(
-                    (mdates.date2num(row["release_date"]), row["accuracy"])
-                )
+                _annotation_targets.append((mdates.date2num(row["release_date"]), row["accuracy"]))
 
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
     ax.xaxis.set_major_locator(mdates.AutoDateLocator(minticks=4, maxticks=10))
@@ -654,9 +661,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
             scatter_sizes=[_marker_radius_px] * len(_target_x),
             y_lines=[[_by, _by] for _by in _baseline_ys] if _baseline_ys else None,
             x_lines=(
-                [[min(_target_x), max(_target_x)] for _ in _baseline_ys]
-                if _baseline_ys
-                else None
+                [[min(_target_x), max(_target_x)] for _ in _baseline_ys] if _baseline_ys else None
             ),
             textsize=9.5,
             textcolor=_label_colors,
@@ -771,17 +776,27 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
             .reset_index()
             .sort_values("release_date")
         )
-        # Determine column order from base (no-web) models only.
-        base_order = (
-            pl_bar_all[~pl_bar_all["web_search"].fillna(False)]
-            .sort_values("release_date")["llm_label"]
-            .tolist()
-        )
+        # Determine column order from base (no-web) models, in release order.
+        base_rows = pl_bar_all[~pl_bar_all["web_search"].fillna(False)].sort_values("release_date")
+        base_order = base_rows["llm_label"].tolist()
+        base_dates = dict(zip(base_rows["llm_label"], base_rows["release_date"]))
+
         # Map base label → web label (strip " +web" suffix from web rows).
         # Web row label is "<base_label> +web" by convention.
         web_rows = pl_bar_all[pl_bar_all["web_search"].fillna(False)].copy()
         web_rows["base_label"] = web_rows["llm_label"].str.replace(r"\s*\+web$", "", regex=True)
         web_by_base: dict = {row["base_label"]: row for _, row in web_rows.iterrows()}
+
+        # A model run only with web search (no matching non-web base run in
+        # the cache, e.g. gemini-3.6-flash-web) has no row in base_order at
+        # all, so it would silently vanish from both panels rather than
+        # showing up as a bar in "With web search" -- give it its own column,
+        # inserted in release-date order like every other column.
+        web_only_labels = [lbl for lbl in web_by_base if lbl not in base_order]
+        if web_only_labels:
+            for lbl in web_only_labels:
+                base_dates[lbl] = web_by_base[lbl]["release_date"]
+            base_order = sorted(base_order + web_only_labels, key=lambda lbl: base_dates[lbl])
 
         n_cols = len(base_order)
         x = np.arange(n_cols)
@@ -1081,9 +1096,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                     x_scatter=_ds_target_x,
                     y_scatter=_ds_target_y,
                     scatter_sizes=[_ds_marker_radius_px] * len(_ds_target_x),
-                    y_lines=(
-                        [[_by, _by] for _by in _ds_baseline_ys] if _ds_baseline_ys else None
-                    ),
+                    y_lines=([[_by, _by] for _by in _ds_baseline_ys] if _ds_baseline_ys else None),
                     x_lines=(
                         [[min(_ds_target_x), max(_ds_target_x)] for _ in _ds_baseline_ys]
                         if _ds_baseline_ys
@@ -1144,7 +1157,12 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
     ]:
         if not _bdata.empty:
             _overview_rows.append(
-                {"label": _name, "accuracy": _bdata["accuracy"].mean(), "color": _color, "kind": "baseline"}
+                {
+                    "label": _name,
+                    "accuracy": _bdata["accuracy"].mean(),
+                    "color": _color,
+                    "kind": "baseline",
+                }
             )
     for (_label, _provider), _grp in pl_df.groupby(["llm_label", "provider"]):
         _overview_rows.append(

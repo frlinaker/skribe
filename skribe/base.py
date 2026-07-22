@@ -7,12 +7,13 @@ import re
 import time
 import traceback
 import warnings
-from typing import Callable, Optional
+from typing import Callable, Optional, Union
 
 from sklearn.base import BaseEstimator
 from sklearn.exceptions import NotFittedError
 
 from .explain import Explanation
+from .postprocess import ConstantPostProcessor, NoOpPostProcessor, find_unverified_thresholds
 from .prompt_markers import CONTEXT_END, CONTEXT_START, DATA_MARKER
 from .utils import (
     extract_python_code,
@@ -29,11 +30,33 @@ logger = logging.getLogger("skribe")
 # SKRIBE_MODEL environment variable is unset.
 DEFAULT_MODEL = "gpt-5.5"
 
+# Default for the known_context_windows constructor param (see
+# BaseSkribeEstimator.__init__): empty, since skribe itself has no built-in
+# list of verified limits for models unmapped in litellm's own registry.
+# Callers (e.g. the benchmarks harness, which tracks per-model metadata in
+# its own config.yaml) inject their own dict of hand-verified
+# {model_id: max_input_tokens} entries rather than skribe reading any
+# specific file itself -- skribe/ has no dependency on benchmarks/ or any
+# particular config format.
+_DEFAULT_KNOWN_CONTEXT_WINDOWS: dict = {}
+
 # Fraction of the model's max_input_tokens budget used for the prompt.
 # Start high to maximise training rows; shrink by this step each time the
 # model signals finish_reason="length" (output was cut off mid-generation).
 _CONTEXT_HEADROOM = 0.92
 _CONTEXT_HEADROOM_STEP = 0.05
+
+# Conservative fallback used when litellm.get_model_info() doesn't know a
+# model's context window at all (e.g. a model too new to be in litellm's
+# registry yet) -- smaller than every mainstream frontier model's real limit,
+# so truncating to this budget is very unlikely to still be rejected. Without
+# this, the previous behavior was to skip truncation entirely and send the
+# full untruncated prompt, which fails outright on any model whose real
+# window is smaller than the training data happens to need (confirmed live:
+# vertex_ai/gemini-3.6-flash, unmapped in litellm as of this writing, kept
+# hitting a real 1,048,576-token ceiling on its three largest benchmark
+# datasets because no truncation was attempted before the first call).
+_UNKNOWN_MODEL_CONTEXT_FALLBACK = 128_000
 
 # Rate limits (HTTP 429) are transient quota exhaustion (requests/tokens per
 # minute), not a signal about this specific request -- so the right response
@@ -43,9 +66,31 @@ _CONTEXT_HEADROOM_STEP = 0.05
 _MAX_RATE_LIMIT_RETRIES = 3
 _RATE_LIMIT_BACKOFF_SECONDS = 60
 
+# A bare connection/read timeout is a transient network stall, not evidence
+# the request itself is bad -- resend the same prompt rather than failing
+# the whole fit over one slow round-trip. Unlike a rate limit, there's no
+# quota window to wait out, so the backoff is short (just enough to not
+# hammer a server that's currently struggling).
+_MAX_TIMEOUT_RETRIES = 2
+_TIMEOUT_BACKOFF_SECONDS = 5
+
 
 class _OutputTruncated(Exception):
     """Raised when the LLM signals finish_reason='length' (output cut off)."""
+
+
+class _UnverifiedThreshold(Exception):
+    """Raised inside ``_generate_code`` when generated code commits a numeric
+    threshold/coefficient with no web search logged this attempt to verify
+    it. Not a real code-validity failure -- a policy rejection that reuses
+    the same retry/feedback loop, since a missing-fact problem is exactly
+    what a corrective retry with search forced on is for."""
+
+    def __init__(self, site: dict):
+        self.site = site
+        super().__init__(
+            f"Unverified {site['kind']} {site['literal']!r} for feature {site['feature']!r}"
+        )
 
 
 class _ContextWindowExceeded(Exception):
@@ -60,19 +105,50 @@ class _ContextWindowExceeded(Exception):
         self.real_max_input_tokens = real_max_input_tokens
 
 
-# Matches known provider context-window error phrasings, e.g.:
-#   "Input tokens exceed the configured limit of 272000 tokens."           (Responses API)
-#   "This model's maximum context length is 128000 tokens."               (Chat Completions)
-_CONTEXT_LIMIT_RE = re.compile(
-    r"(?:configured limit of|maximum context length is) (\d[\d,]*)\s*tokens",
-    re.IGNORECASE,
-)
+def _extract_context_limit(text: str) -> Optional[int]:
+    """Best-effort extraction of a model's real max-input-token count from an
+    arbitrary provider error message. Deliberately loose on wording -- react
+    to any message that mentions "token" alongside a limit-ish word
+    (limit/maximum/allowed/exceed) rather than maintaining an exact-phrase
+    allowlist that breaks the moment a new provider/model uses slightly
+    different text. Real-world phrasings seen so far, all handled without a
+    provider-specific case: "Input tokens exceed the configured limit of
+    272000 tokens." (OpenAI Responses API), "This model's maximum context
+    length is 128000 tokens." (OpenAI Chat Completions), "The input token
+    count exceeds the maximum number of tokens allowed 1048576." (Vertex AI).
+
+    Which number is "the limit" is ambiguous when a message contains more
+    than one (e.g. Anthropic's "178902 + 32000 > 200000" -- 178902 is the
+    input length, 200000 is the actual ceiling) -- so this prefers, in order:
+    a number immediately followed by "tokens" (e.g. "128,000 tokens"), then a
+    number immediately preceded by "allowed"/"limit of"/"length is" (e.g.
+    Vertex's "...tokens allowed 1048576", which has no unit word after the
+    number), then a number immediately following ">" (an explicit "your
+    input exceeds this" comparison), then gives up rather than guessing
+    wrong and setting too low a ceiling.
+    """
+    if not re.search(r"token", text, re.IGNORECASE) or not re.search(
+        r"limit|maximum|allowed|exceed", text, re.IGNORECASE
+    ):
+        return None
+    match = re.search(r"(?P<limit>\d[\d,]{2,})\s*tokens?\b", text, re.IGNORECASE)
+    if not match:
+        match = re.search(
+            r"(?:allowed|limit of|length is)\s+(?P<limit>\d[\d,]{2,})\b", text, re.IGNORECASE
+        )
+    if not match:
+        match = re.search(r">\s*(?P<limit>\d[\d,]{2,})\b", text)
+    if not match:
+        return None
+    return int(match.group("limit").replace(",", ""))
+
 
 # Additional phrasings for context-window rejections that litellm's own
 # exception mapper doesn't recognize (yet), so they surface as a bare
 # litellm.BadRequestError instead of litellm.ContextWindowExceededError --
 # seen live from openai/gpt-5.6-sol(-web) on the Responses API, which never
-# includes a numeric limit, unlike the phrasings _CONTEXT_LIMIT_RE matches.
+# includes a numeric limit, unlike the phrasings _extract_context_limit
+# handles above.
 _UNMAPPED_CONTEXT_WINDOW_PHRASES = (
     "exceeds the context window of this model",
     # Anthropic Chat Completions, e.g.: "input length and `max_tokens`
@@ -138,9 +214,33 @@ def _check_unresolved_names(code: str) -> None:
     Mirrors the audit's ``check_signature_mismatch`` heuristic: nested
     ``def``/lambda params, comprehension/for-loop targets, ``with ... as``,
     ``except ... as``, and walrus targets all count as bound names, so
-    legitimate nested helper functions don't false-positive.
+    legitimate nested helper functions don't false-positive. Module-level
+    assignments/defs/imports (e.g. a lookup dict like ``CHEST_PAIN_MAP = {...}``
+    defined above the function) are also collected as known globals -- without
+    this, any reference to such a dict from inside predict()/transform() would
+    itself be flagged as unresolved, even though it's valid Python.
     """
     tree = ast.parse(code)
+    # Module-level bindings (constants/lookup dicts, helper defs, imports) are
+    # visible to predict()/transform() as globals -- e.g. a `CHEST_PAIN_MAP =
+    # {...}` dict defined above the function and referenced inside it is
+    # completely valid Python, not an unresolved name. Collected once, from
+    # the module body only (not recursing into nested scopes), so it doesn't
+    # also swallow genuine bugs inside other top-level functions.
+    module_level = set()
+    for stmt in tree.body:
+        if isinstance(stmt, ast.Assign):
+            for t in stmt.targets:
+                if isinstance(t, ast.Name):
+                    module_level.add(t.id)
+        elif isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
+            module_level.add(stmt.target.id)
+        elif isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            module_level.add(stmt.name)
+        elif isinstance(stmt, (ast.Import, ast.ImportFrom)):
+            for alias in stmt.names:
+                module_level.add(alias.asname or alias.name.split(".")[0])
+
     functions = [
         node
         for node in ast.walk(tree)
@@ -180,7 +280,7 @@ def _check_unresolved_names(code: str) -> None:
         loaded = {
             n.id for n in ast.walk(func) if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)
         }
-        known = declared | bound | set(dir(builtins)) | {"self"}
+        known = declared | bound | module_level | set(dir(builtins)) | {"self"}
         unknown = sorted(n for n in loaded - known if not n.startswith("__"))
         if unknown:
             name = unknown[0]
@@ -215,6 +315,8 @@ class BaseSkribeEstimator(BaseEstimator):
         reasoning_effort: Optional[str] = None,
         reasoning_mode: Optional[str] = None,
         api_base: Optional[str] = None,
+        postprocessor: Optional[Union[ConstantPostProcessor, NoOpPostProcessor]] = None,
+        known_context_windows: Optional[dict] = None,
     ):
         self.model = model
         self.verbose = verbose
@@ -227,6 +329,29 @@ class BaseSkribeEstimator(BaseEstimator):
         self.reasoning_effort = reasoning_effort
         self.reasoning_mode = reasoning_mode
         self.api_base = api_base
+        # Injected rather than hardcoded so a caller can swap in a different
+        # postprocessing strategy without subclassing -- see
+        # skribe/postprocess.py for what ConstantPostProcessor does. Off by
+        # default (NoOpPostProcessor): constant tuning is opt-in, pass
+        # postprocessor=ConstantPostProcessor() to enable it.
+        self.postprocessor = postprocessor if postprocessor is not None else NoOpPostProcessor()
+        # Injected {model_id: max_input_tokens} overrides for models
+        # litellm.get_model_info() doesn't know about yet (too new for its
+        # registry) -- skribe has no built-in list and no config file of its
+        # own; a caller that maintains one (e.g. the benchmarks harness'
+        # config.yaml) passes it in here rather than skribe/ depending on
+        # any particular file or format. Checked before
+        # litellm.get_model_info() in _truncate_to_context_window, since a
+        # caller-supplied, hand-verified entry is more trustworthy than
+        # litellm's registry for any model listed here. The runtime-learning
+        # path (_ContextWindowExceeded / max_input_override) still exists
+        # and still runs for any model not listed, or if a listed value ever
+        # turns out to be stale.
+        self.known_context_windows = (
+            known_context_windows
+            if known_context_windows is not None
+            else _DEFAULT_KNOWN_CONTEXT_WINDOWS
+        )
         self.predict_fn: Optional[Callable] = None
         self.target_name_: Optional[str] = None
         self.feature_names_: Optional[list] = None
@@ -252,6 +377,8 @@ class BaseSkribeEstimator(BaseEstimator):
             "reasoning_effort": self.reasoning_effort,
             "reasoning_mode": self.reasoning_mode,
             "api_base": self.api_base,
+            "postprocessor": self.postprocessor,
+            "known_context_windows": self.known_context_windows,
         }
 
     # used by GridSearchCV
@@ -303,6 +430,7 @@ class BaseSkribeEstimator(BaseEstimator):
         "vertex_ai/gemini-2.5-flash",
         "vertex_ai/gemini-2.5-flash-lite",
         "vertex_ai/gemini-3.5-flash",
+        "vertex_ai/gemini-3.6-flash",
     }
 
     # Anthropic models that support web search via the native
@@ -347,8 +475,10 @@ class BaseSkribeEstimator(BaseEstimator):
         works regardless of which one happens to be in the set.
         """
         bare = model.split("/", 1)[-1]
-        return model in supported or bare in supported or any(
-            entry.split("/", 1)[-1] == bare for entry in supported
+        return (
+            model in supported
+            or bare in supported
+            or any(entry.split("/", 1)[-1] == bare for entry in supported)
         )
 
     def _record_web_search_evidence(
@@ -403,6 +533,13 @@ class BaseSkribeEstimator(BaseEstimator):
         ``web_search`` tool dict (e.g. ``search_context_size``, ``filters``)
         for the OpenAI-only Responses API path — Gemini's grounding tool has
         no equivalent knobs, so this is a no-op there.
+
+        Transient failures are retried in-place with the same prompt: a rate
+        limit (quota exhaustion, not a signal about this request) up to
+        ``_MAX_RATE_LIMIT_RETRIES`` times with a full-minute backoff to wait
+        out the window, and a bare connection/read timeout up to
+        ``_MAX_TIMEOUT_RETRIES`` times with a short backoff. Both eventually
+        give up and raise ``RuntimeError`` rather than retrying forever.
         """
         import litellm
 
@@ -418,7 +555,9 @@ class BaseSkribeEstimator(BaseEstimator):
         if model.startswith("ollama:"):
             model = "ollama/" + model[len("ollama:") :]
 
-        for attempt in range(_MAX_RATE_LIMIT_RETRIES + 1):
+        rate_limit_attempts = 0
+        timeout_attempts = 0
+        while True:
             try:
                 return self._dispatch_llm_call(
                     prompt,
@@ -429,7 +568,8 @@ class BaseSkribeEstimator(BaseEstimator):
                     reasoning_mode,
                 )
             except litellm.RateLimitError as e:
-                is_last_attempt = attempt == _MAX_RATE_LIMIT_RETRIES
+                rate_limit_attempts += 1
+                is_last_attempt = rate_limit_attempts > _MAX_RATE_LIMIT_RETRIES
                 self.fit_log_.append(
                     {
                         "stage": "llm_call",
@@ -446,12 +586,37 @@ class BaseSkribeEstimator(BaseEstimator):
                     raise RuntimeError(f"LLM call failed: {e}")
                 logger.warning(
                     "Rate limit hit (attempt %d/%d) — sleeping %ds before retrying. Error: %s",
-                    attempt + 1,
+                    rate_limit_attempts,
                     _MAX_RATE_LIMIT_RETRIES,
                     _RATE_LIMIT_BACKOFF_SECONDS,
                     e,
                 )
                 time.sleep(_RATE_LIMIT_BACKOFF_SECONDS)
+            except litellm.Timeout as e:
+                timeout_attempts += 1
+                is_last_attempt = timeout_attempts > _MAX_TIMEOUT_RETRIES
+                self.fit_log_.append(
+                    {
+                        "stage": "llm_call",
+                        "error": f"Timeout: {e}",
+                        "retrying": not is_last_attempt,
+                    }
+                )
+                if is_last_attempt:
+                    logger.error(
+                        "LLM call timed out — exhausted %d retries. Error: %s",
+                        _MAX_TIMEOUT_RETRIES,
+                        e,
+                    )
+                    raise RuntimeError(f"LLM call failed: {e}")
+                logger.warning(
+                    "LLM call timed out (attempt %d/%d) — sleeping %ds before retrying. Error: %s",
+                    timeout_attempts,
+                    _MAX_TIMEOUT_RETRIES,
+                    _TIMEOUT_BACKOFF_SECONDS,
+                    e,
+                )
+                time.sleep(_TIMEOUT_BACKOFF_SECONDS)
 
     def _dispatch_llm_call(
         self,
@@ -501,13 +666,12 @@ class BaseSkribeEstimator(BaseEstimator):
                     timeout=self.llm_timeout,
                     **responses_kwargs,
                 )
-            except litellm.RateLimitError:
+            except (litellm.RateLimitError, litellm.Timeout):
                 # Let _call_llm's retry loop handle this — it resends the
                 # same prompt after a backoff instead of failing the whole fit.
                 raise
             except litellm.ContextWindowExceededError as e:
-                match = _CONTEXT_LIMIT_RE.search(str(e))
-                real_max_input_tokens = int(match.group(1).replace(",", "")) if match else None
+                real_max_input_tokens = _extract_context_limit(str(e))
                 logger.warning(
                     "Context window exceeded at API level (local token count was inaccurate) — "
                     "will reduce dataset and retry%s. Error: %s",
@@ -643,8 +807,7 @@ class BaseSkribeEstimator(BaseEstimator):
             # Local token counter (or litellm's get_model_info) undercounted or
             # is stale — the provider's error message carries the real limit,
             # so parse it out rather than guessing via headroom shrink steps.
-            match = _CONTEXT_LIMIT_RE.search(str(e))
-            real_max_input_tokens = int(match.group(1).replace(",", "")) if match else None
+            real_max_input_tokens = _extract_context_limit(str(e))
             logger.warning(
                 "Context window exceeded at API level (local token count was inaccurate) — "
                 "will reduce dataset and retry%s. Error: %s",
@@ -675,7 +838,7 @@ class BaseSkribeEstimator(BaseEstimator):
             logger.error("LLM call failed: %s", e)
             self.fit_log_.append({"stage": "llm_call", "error": str(e)})
             raise RuntimeError(f"LLM call failed: {e}")
-        except litellm.RateLimitError:
+        except (litellm.RateLimitError, litellm.Timeout):
             # Let _call_llm's retry loop handle this — it resends the same
             # prompt after a backoff instead of failing the whole fit.
             raise
@@ -946,16 +1109,24 @@ class BaseSkribeEstimator(BaseEstimator):
 
         Builds the prompt with all rows, counts tokens, and removes rows from the
         bottom until it fits. Warns once if any truncation occurs. If the model's
-        context window is unknown, returns df unchanged with a warning.
+        context window is unknown (e.g. too new for litellm's registry), a
+        conservative fallback budget is used instead of skipping the check —
+        sending an untruncated prompt to an unknown-sized context window risks
+        an outright rejection with no fallback if the real window turns out to
+        be smaller than the training data needs.
 
-        ``max_input_override`` takes precedence over litellm.get_model_info() —
-        used once the API has told us its real limit, since that registry value
-        can be stale or wrong (see _ContextWindowExceeded).
+        ``max_input_override`` takes precedence over both
+        ``self.known_context_windows`` and litellm.get_model_info() — used
+        once the API has told us its real limit *this run*, since a runtime
+        correction is more current than either of those (see
+        _ContextWindowExceeded).
         """
         import litellm
 
         if max_input_override:
             max_input = max_input_override
+        elif self.model in self.known_context_windows:
+            max_input = self.known_context_windows[self.model]
         else:
             try:
                 info = litellm.get_model_info(self.model)
@@ -965,11 +1136,13 @@ class BaseSkribeEstimator(BaseEstimator):
             except Exception as e:
                 logger.warning(
                     "Could not determine context window for model %r (%s) — "
-                    "skipping token-limit check.",
+                    "assuming a conservative %d-token budget until the API "
+                    "reports the real limit.",
                     self.model,
                     e,
+                    _UNKNOWN_MODEL_CONTEXT_FALLBACK,
                 )
-                return df
+                max_input = _UNKNOWN_MODEL_CONTEXT_FALLBACK
 
         budget = int(max_input * headroom)
 
@@ -1076,6 +1249,18 @@ class BaseSkribeEstimator(BaseEstimator):
             majority_class=majority_class,
         )
 
+        # Full post-max_train_rows data, independent of how much further the
+        # LLM prompt gets truncated to fit the model's context window. The
+        # postprocessor does pure local fitting (no LLM, no token budget), so
+        # it should tune against as much real data as is available rather
+        # than being limited to whatever slice the LLM happened to see.
+        postprocess_rows = (
+            list(generate_feature_dicts(data[self.feature_names_], self.feature_names_))
+            if self.feature_names_
+            else []
+        )
+        postprocess_labels = list(data[self.target_name_]) if self.target_name_ else []
+
         headroom = _CONTEXT_HEADROOM
         max_input_override = None
         while True:
@@ -1099,17 +1284,27 @@ class BaseSkribeEstimator(BaseEstimator):
 
             try:
                 raw_code, extended_code, predict_fn = self._generate_code(
-                    base_prompt, validation_rows, validation_labels, web_search=self.web_search
+                    base_prompt,
+                    validation_rows,
+                    validation_labels,
+                    web_search=self.web_search,
+                    postprocess_rows=postprocess_rows,
+                    postprocess_labels=postprocess_labels,
                 )
                 break
             except _ContextWindowExceeded as e:
-                if e.real_max_input_tokens and e.real_max_input_tokens != max_input_override:
-                    # We now know the model's actual limit (litellm's registry
-                    # value was wrong/stale) — retry once with that instead of
-                    # spending headroom-shrink budget on a guess.
+                # Always trust the API's own real-time feedback over our own
+                # heuristics: whenever this error carries a real token limit
+                # -- new or a repeat of what we already had -- treat that as
+                # authoritative and retry with it directly. Headroom-shrink
+                # guessing is the fallback for when the API's error message
+                # genuinely has no extractable number, not a competing
+                # strategy to reach for even when the API did give us one.
+                if e.real_max_input_tokens:
+                    is_new = e.real_max_input_tokens != max_input_override
                     logger.warning(
-                        "Correcting max_input_tokens for %r to the API-reported "
-                        "value %d and retrying.",
+                        "%s max_input_tokens for %r to the API-reported value %d and retrying.",
+                        "Correcting" if is_new else "Confirming",
                         self.model,
                         e.real_max_input_tokens,
                     )
@@ -1117,10 +1312,28 @@ class BaseSkribeEstimator(BaseEstimator):
                         {
                             "stage": "context_window",
                             "error": str(e),
-                            "action": f"corrected max_input_tokens to {e.real_max_input_tokens}",
+                            "action": (
+                                f"corrected max_input_tokens to {e.real_max_input_tokens}"
+                                if is_new
+                                else f"confirmed max_input_tokens at {e.real_max_input_tokens}"
+                            ),
                         }
                     )
                     max_input_override = e.real_max_input_tokens
+                    if not is_new:
+                        # Same override, still rejected -- our margin against
+                        # it wasn't enough (e.g. per-request overhead beyond
+                        # what _truncate_to_context_window accounted for), so
+                        # still shrink headroom, but against the confirmed
+                        # real number rather than an unverified guess.
+                        new_headroom = headroom - _CONTEXT_HEADROOM_STEP
+                        if new_headroom < 0.50:
+                            raise RuntimeError(
+                                f"Context window exceeded even at {headroom:.0%} headroom "
+                                f"of the API-confirmed {max_input_override:,}-token limit "
+                                f"(floor is 50%). The prompt is too large for this model."
+                            )
+                        headroom = new_headroom
                     continue
                 new_headroom = headroom - _CONTEXT_HEADROOM_STEP
                 if new_headroom < 0.50:
@@ -1172,6 +1385,8 @@ class BaseSkribeEstimator(BaseEstimator):
         validation_rows: list,
         validation_labels: list = [],
         web_search: bool = False,
+        postprocess_rows: Optional[list] = None,
+        postprocess_labels: Optional[list] = None,
     ):
         """Generate code from the LLM with a validation-and-retry loop.
 
@@ -1180,9 +1395,22 @@ class BaseSkribeEstimator(BaseEstimator):
         triggers a retry with the error fed back to the LLM. Subclasses can
         override ``_validate_predict_fn`` to add stricter checks. Raises the last
         error if every attempt (one initial plus ``max_retries``) fails.
+
+        ``_UnverifiedThreshold`` is a policy warning rather than a code-
+        correctness failure -- the code that tripped it already passed
+        ``_validate_predict_fn`` -- and is never raised on the last attempt
+        (the gate is skipped there), so it never causes the loop to exhaust
+        on its own. But it does force a corrective retry with web search
+        enabled; if *that* retry's LLM call itself fails outright (timeout,
+        connection error), the failure is recovered by returning the prior
+        attempt's unverified-but-working code instead of raising, with a
+        warning logged -- losing a network call shouldn't cost code that
+        already worked.
         """
         feedback = ""
         last_error: Optional[Exception] = None
+        last_unverified: Optional[tuple] = None
+        force_search_next = False
         # One initial attempt plus up to max_retries corrective re-tries.
         for attempt in range(self.max_retries + 1):
             # Web search on the first attempt and the final retry: a retry
@@ -1191,12 +1419,46 @@ class BaseSkribeEstimator(BaseEstimator):
             # most, so the last attempt shouldn't go in blind -- but every
             # attempt would just add latency without giving the model new
             # information most of the time (most retries are plain logic
-            # bugs, not knowledge gaps).
+            # bugs, not knowledge gaps). An unverified-threshold rejection
+            # (below) also forces a search on the very next attempt,
+            # regardless of position in the loop -- that failure mode IS a
+            # missing-fact problem by definition.
             # _OutputTruncated propagates immediately to _fit for data reduction.
             is_last_attempt = attempt == self.max_retries
-            code = self._call_llm(
-                base_prompt + feedback, web_search=web_search and (attempt == 0 or is_last_attempt)
+            attempt_web_search = web_search and (
+                attempt == 0 or is_last_attempt or force_search_next
             )
+            force_search_next = False
+            log_len_before = len(self.fit_log_)
+            try:
+                code = self._call_llm(base_prompt + feedback, web_search=attempt_web_search)
+            except (_OutputTruncated, _ContextWindowExceeded):
+                # Not retried here -- _fit needs to see these directly to
+                # shrink the dataset and restart _generate_code from scratch.
+                raise
+            except Exception as e:
+                # A transient LLM-call failure (timeout, connection error,
+                # etc.) on a retry that only exists because of an earlier
+                # unverified-threshold rejection shouldn't cost the fit code
+                # that already worked -- fall back to it instead of failing
+                # outright. Any other case (e.g. the very first attempt)
+                # still raises, since there's no working code to fall back to.
+                if last_unverified is not None:
+                    logger.warning(
+                        "[Verification] LLM call failed on the corrective retry for an "
+                        "unverified threshold (%s) — proceeding with the last unverified "
+                        "value instead of failing the fit.",
+                        e,
+                    )
+                    self.fit_log_.append(
+                        {
+                            "stage": "unverified_threshold",
+                            "action": f"LLM call failed on retry ({e}); "
+                            "proceeding with unverified value",
+                        }
+                    )
+                    return last_unverified
+                raise
             if not isinstance(code, str):
                 code = str(code)
             logger.info(f"[LLM Output]\n{code}")
@@ -1208,9 +1470,60 @@ class BaseSkribeEstimator(BaseEstimator):
                     raise ValueError("No code to exec from LLM output.")
                 raw_code = code
                 extended_code = self._extend_code(code, web_search=web_search)
+                search_verified_this_attempt = any(
+                    entry.get("stage") == "web_search"
+                    and (entry.get("search_call_count") or entry.get("citations"))
+                    for entry in self.fit_log_[log_len_before:]
+                )
+                extended_code = self.postprocessor.process(
+                    extended_code,
+                    postprocess_rows if postprocess_rows is not None else validation_rows,
+                    postprocess_labels if postprocess_labels is not None else validation_labels,
+                    is_classification=getattr(self, "_task_type", "classification")
+                    == "classification",
+                )
                 _check_unresolved_names(extended_code)
                 fn = make_predict_fn(extended_code)
                 self._validate_predict_fn(fn, validation_rows, validation_labels)
+
+                if web_search and not is_last_attempt:
+                    unverified = find_unverified_thresholds(extended_code)
+                    if unverified and not search_verified_this_attempt:
+                        site = unverified[0]
+                        raise _UnverifiedThreshold(site)
+            except _UnverifiedThreshold as e:
+                last_error = e
+                # The code that tripped this already compiled and passed
+                # _validate_predict_fn -- it's a real, working fallback if
+                # every remaining attempt is rejected for this same reason.
+                last_unverified = (raw_code, extended_code, fn)
+                site = e.site
+                feature_desc = f"'{site['feature']}'" if site["feature"] else "a feature"
+                logger.warning(
+                    f"[Verification] Attempt {attempt + 1}/{self.max_retries + 1}: "
+                    f"unverified {site['kind']} {site['literal']!r} for {feature_desc}, no search logged."
+                )
+                self.fit_log_.append(
+                    {
+                        "stage": "unverified_threshold",
+                        "attempt": attempt + 1,
+                        "max_attempts": self.max_retries + 1,
+                        "feature": site["feature"],
+                        "literal": site["literal"],
+                        "kind": site["kind"],
+                    }
+                )
+                feedback = (
+                    f"\n\nYour function uses the numeric {site['kind']} {site['literal']!r} for "
+                    f"{feature_desc} without verifying it against real-world data. Issue a web "
+                    f"search for the actual empirical distribution of {feature_desc} in this "
+                    "domain, then rewrite the function using that verified value. Return only "
+                    "the corrected, valid Python code."
+                )
+                force_search_next = True
+                if attempt < self.max_retries:
+                    time.sleep(5)
+                continue
             except Exception as e:
                 last_error = e
                 error_detail = _format_error_with_suggestion(e)
@@ -1236,7 +1549,10 @@ class BaseSkribeEstimator(BaseEstimator):
 
             return raw_code, extended_code, fn
 
-        # Every attempt failed; surface the most recent error.
+        # Every attempt failed; surface the most recent error. Note this
+        # can never be an unreturned _UnverifiedThreshold: the gate that
+        # raises it is skipped on the last attempt (see is_last_attempt
+        # above), so any exhaustion here is a genuine, unrecovered failure.
         assert last_error is not None
         raise last_error
 
@@ -1373,11 +1689,18 @@ class BaseSkribeEstimator(BaseEstimator):
     def _explanation_meta(self, scope: list) -> dict:
         # The generated Python heuristic is fully visible, so this is a whitebox
         # explanation in the Alibi sense.
+        params = self.get_params()
+        # get_params() returns the real postprocessor object (needed for
+        # sklearn's clone() contract) rather than a JSON-safe value --
+        # Explanation.to_json() requires every meta value to round-trip
+        # through json.dumps, so it's stringified here instead of exposing a
+        # raw object through the params dict.
+        params["postprocessor"] = repr(params["postprocessor"])
         return {
             "name": type(self).__name__,
             "type": ["whitebox"],
             "explanations": scope,
-            "params": self.get_params(),
+            "params": params,
         }
 
     def _features_used(self) -> list:

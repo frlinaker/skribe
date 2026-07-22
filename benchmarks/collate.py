@@ -57,6 +57,7 @@ def load_cache_results(
     cache_dir: Path,
     dataset_filter: list[str] | None = None,
     llm_filter: list[str] | None = None,
+    exclude_web: bool = False,
 ) -> list[dict]:
     """Read all JSON cache files from *cache_dir* and return a flat list of dicts.
 
@@ -70,6 +71,11 @@ def load_cache_results(
     llm_filter:
         When given, only include skribe records whose ``model_id`` is in this
         list.  Baseline records (logreg / xgboost / tabpfn) are always included.
+    exclude_web:
+        When true, skip skribe records whose ``model_id`` is a web-search
+        variant (``<base>-web``, per ``_build_model_progression``'s naming
+        convention — the cache file itself carries no separate web_search
+        flag to check). Baseline records are always included.
     """
     if not cache_dir.exists():
         logger.warning("Cache directory does not exist: %s", cache_dir)
@@ -101,6 +107,8 @@ def load_cache_results(
 
         is_baseline = model_id in BASELINE_MODELS
         if not is_baseline and llm_filter and model_id not in llm_filter:
+            continue
+        if not is_baseline and exclude_web and model_id.endswith("-web"):
             continue
 
         results.append(data)
@@ -137,6 +145,11 @@ def main(argv=None):
         action="store_true",
         help="Skip chart generation (print table only).",
     )
+    parser.add_argument(
+        "--no-web",
+        action="store_true",
+        help="Exclude web-search-enabled (+web) skribe variants from the table and charts.",
+    )
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(message)s")
@@ -149,6 +162,7 @@ def main(argv=None):
         cache_dir,
         dataset_filter=args.datasets,
         llm_filter=args.llms,
+        exclude_web=args.no_web,
     )
 
     if not results:

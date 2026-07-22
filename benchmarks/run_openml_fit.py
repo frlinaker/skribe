@@ -228,6 +228,7 @@ def run_one_skribe(
     reasoning_mode: str | None = None,
     llm_timeout: float | None = None,
     api_base: str | None = None,
+    max_input_tokens: int | None = None,
 ) -> dict:
     actual_model_id = base_model_id or (model_id.removesuffix("-web") if web_search else model_id)
     tag = f"[{dataset} × {model_id}]"
@@ -338,6 +339,13 @@ def run_one_skribe(
             clf_kwargs["llm_timeout"] = llm_timeout
         if api_base is not None:
             clf_kwargs["api_base"] = api_base
+        if max_input_tokens is not None:
+            # A hand-verified limit from config.yaml for a model litellm's own
+            # registry doesn't know about yet (see max_input_tokens in
+            # config.yaml) -- skribe/ has no config file of its own, so the
+            # benchmark harness injects this rather than skribe reading
+            # anything under benchmarks/ itself.
+            clf_kwargs["known_context_windows"] = {actual_model_id: max_input_tokens}
         clf = SkribeClassifier(**clf_kwargs)
 
         _prepass_time = [0.0]
@@ -584,6 +592,7 @@ def main(argv=None):
         reasoning_effort=args.reasoning_effort,
         reasoning_mode=args.reasoning_mode,
         llm_timeout=args.llm_timeout,
+        max_input_tokens=meta.get("max_input_tokens"),
     )
     return 0
 

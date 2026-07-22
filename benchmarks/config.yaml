@@ -185,6 +185,22 @@ models:
     color: "#1a56c4"
     supports_web: true
     web_color: "#5080d8"
+  - model_id: vertex_ai/gemini-3.6-flash
+    label: Gemini 3.6 Flash
+    release_date: 2026-07-21  # not yet in regional endpoints; only reachable via vertex_region=global
+    family: Gemini 3
+    provider: google
+    vertex_region: global
+    color: "#0d3d8f"
+    supports_web: true
+    web_color: "#4068c0"
+    # Confirmed live 2026-07-21 via Vertex AI's own rejection error ("The
+    # input token count exceeds the maximum number of tokens allowed
+    # 1048576.") -- litellm has no registry entry for this model at all
+    # (too new), so without this skribe would send an untruncated prompt on
+    # every first attempt. Passed to SkribeClassifier(known_context_windows=...)
+    # by run_openml_fit.py rather than skribe/ reading this file itself.
+    max_input_tokens: 1048576
 
   # Ollama (local/self-hosted, no web_search support) — run via an
   # OpenAI/Anthropic/Google-style API but reachable through OLLAMA_API_BASE

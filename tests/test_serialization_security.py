@@ -43,6 +43,19 @@ ALLOWED_STATE_FIELDS = {
     "context_prepass_prompt_",
     "fit_log_",
     "new_feature_names_",  # SkribeFeatureEngineer
+    # Injected postprocessing strategy (see skribe/postprocess.py) -- the
+    # standard ConstantPostProcessor is stateless (pure AST/data fitting, no
+    # client or credential references), so serializing it carries no secret.
+    # A custom injected postprocessor is the caller's own object; reviewing
+    # it for leakage is the caller's responsibility, same as any other
+    # constructor argument they choose to pass.
+    "postprocessor",
+    # Injected {model_id: max_input_tokens} overrides (see
+    # BaseSkribeEstimator.__init__) -- always a plain dict of model names to
+    # integers, supplied by the caller (e.g. the benchmarks harness' own
+    # config), never anything skribe reads from a file or credential source
+    # itself.
+    "known_context_windows",
 }
 
 

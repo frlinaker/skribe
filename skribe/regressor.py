@@ -34,6 +34,8 @@ Only output valid Python code, no markdown or explanations.
 
 
 class SkribeRegressor(RegressorMixin, BaseSkribeEstimator):
+    _task_type = "regression"
+
     def __init__(
         self,
         model=None,
@@ -47,6 +49,8 @@ class SkribeRegressor(RegressorMixin, BaseSkribeEstimator):
         reasoning_effort: str | None = None,
         reasoning_mode: str | None = None,
         api_base: str | None = None,
+        postprocessor=None,
+        known_context_windows: dict | None = None,
     ):
         super().__init__(
             model=resolve_model(model),
@@ -60,6 +64,8 @@ class SkribeRegressor(RegressorMixin, BaseSkribeEstimator):
             reasoning_effort=reasoning_effort,
             reasoning_mode=reasoning_mode,
             api_base=api_base,
+            postprocessor=postprocessor,
+            known_context_windows=known_context_windows,
         )
 
     def fit(self, X, y, synthetic_features=None, dataset_description=None) -> "SkribeRegressor":

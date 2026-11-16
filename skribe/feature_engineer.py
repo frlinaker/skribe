@@ -63,7 +63,7 @@ class SkribeFeatureEngineer(TransformerMixin, BaseSkribeEstimator):
         web_search: bool = False,
         context_prepass: bool = True,
         vertex_location: str | None = None,
-        llm_timeout: float = 120,
+        llm_timeout: float = 3600,
         reasoning_effort: str | None = None,
         reasoning_mode: str | None = None,
         api_base: str | None = None,

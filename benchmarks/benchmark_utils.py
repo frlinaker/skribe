@@ -128,6 +128,14 @@ MODEL_PROGRESSION = _build_model_progression(_CONFIG)
 
 DEFAULT_DATASETS = _build_default_datasets(_CONFIG)
 
+# The current frontier model per company (one each) -- error bars are shown
+# only for these plus the classical baselines, rather than every model ever
+# benchmarked, since a bar chart with 15+ error bars is unreadable clutter.
+# "Frontier" here means best accuracy so far in these benchmarks, not
+# necessarily the newest release (e.g. Claude Opus 4.8 over the more
+# recently released Claude Sonnet 5).
+FRONTIER_MODEL_IDS = {"openai/gpt-5.6-sol", "claude-opus-4-8", "vertex_ai/gemini-3.6-flash"}
+
 
 def load_dataset(
     openml_name,
@@ -770,12 +778,22 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
         "ollama": "Ollama",
     }
     if not pl_data.empty:
+        # Grouped from pl_df (raw per-dataset rows), not pl_data (already
+        # dataset-averaged) -- std across a single already-averaged row is
+        # always NaN, which silently dropped every error bar here.
         pl_bar_all = (
-            pl_data.groupby(["llm_label", "release_date", "provider", "web_search"])["accuracy"]
-            .mean()
+            pl_df.groupby(["llm_label", "release_date", "provider", "web_search", "model_id"])[
+                "accuracy"
+            ]
+            .agg(["mean", "std"])
             .reset_index()
+            .rename(columns={"mean": "accuracy"})
             .sort_values("release_date")
         )
+        # Error bars (std across datasets) are only shown for frontier models
+        # + baselines -- see FRONTIER_MODEL_IDS -- to avoid cluttering every
+        # historical bar with one.
+        pl_bar_all.loc[~pl_bar_all["model_id"].isin(FRONTIER_MODEL_IDS), "std"] = np.nan
         # Determine column order from base (no-web) models, in release order.
         base_rows = pl_bar_all[~pl_bar_all["web_search"].fillna(False)].sort_values("release_date")
         base_order = base_rows["llm_label"].tolist()
@@ -811,6 +829,11 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
             for _, bdata, _, lbl in baseline_styles_3
             if not bdata.empty
         }
+        baseline_stds_3 = {
+            lbl: bdata["accuracy"].std()
+            for _, bdata, _, lbl in baseline_styles_3
+            if not bdata.empty
+        }
 
         fig3, (ax3_top, ax3_bot) = plt.subplots(
             2,
@@ -834,9 +857,12 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                 color = _provider_bar_color.get(prov, "#999999")
                 prov_name = _provider_bar_name.get(prov, prov)
                 label_str = f"skribe / {prov_name}"
+                has_std = pd.notna(row.get("std"))
                 bar = ax.bar(
                     i,
                     row["accuracy"],
+                    yerr=row["std"] if has_std else None,
+                    error_kw=dict(ecolor="#333333", capsize=3, linewidth=1.2, zorder=5),
                     color=color,
                     label=label_str if label_str not in _legend_seen else "_nolegend_",
                     zorder=3,
@@ -844,7 +870,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                 _legend_seen.add(label_str)
                 ax.text(
                     i,
-                    row["accuracy"] + 0.005,
+                    row["accuracy"] + (row["std"] if has_std else 0) + 0.005,
                     f"{row['accuracy']:.2f}",
                     ha="center",
                     va="bottom",
@@ -857,6 +883,12 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                     "TabPFN": "#FF7F0E",
                 }
                 c = color_map.get(lbl, "#888")
+                std = baseline_stds_3.get(lbl)
+                if pd.notna(std):
+                    # A horizontal line has no natural error-bar analog, so
+                    # show the baseline's cross-dataset spread as a shaded
+                    # band around its mean instead.
+                    ax.axhspan(val - std, val + std, color=c, alpha=0.12, zorder=2)
                 ax.axhline(
                     val,
                     color=c,
@@ -890,9 +922,10 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
         ax3_bot.set_xlabel("LLM model (oldest → newest)", fontsize=12)
 
         fig3.suptitle(
-            "skribe vs baselines: mean accuracy by LLM generation",
+            "skribe vs baselines: mean accuracy by LLM generation\n"
+            "Error bars / shaded bands = ±1 std across datasets (frontier models + baselines only)",
             fontsize=13,
-            y=1.01,
+            y=1.02,
         )
         fig3.tight_layout()
         out3 = output_dir / "all_learners_bar.png"
@@ -1149,6 +1182,12 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
         plt.close(fig5)
 
     # ── 6. Overview ranking: every baseline + every skribe variant, sorted ──
+    # Error bars (std across datasets) are only computed/shown for the
+    # frontier models + baselines -- see FRONTIER_MODEL_IDS -- since a bar
+    # chart with an error bar on all 15+ historical models is unreadable
+    # clutter, and cross-dataset std is what's meaningful here: each bar is
+    # already a mean accuracy *across* datasets, so its natural spread is
+    # how consistent the model is from dataset to dataset.
     _overview_rows = []
     for _name, _bdata, _color in [
         ("Logistic Regression", lr_data, "#4878CF"),
@@ -1160,15 +1199,19 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                 {
                     "label": _name,
                     "accuracy": _bdata["accuracy"].mean(),
+                    "std": _bdata["accuracy"].std(),
                     "color": _color,
                     "kind": "baseline",
                 }
             )
-    for (_label, _provider), _grp in pl_df.groupby(["llm_label", "provider"]):
+    for (_label, _provider, _model_id), _grp in pl_df.groupby(
+        ["llm_label", "provider", "model_id"]
+    ):
         _overview_rows.append(
             {
                 "label": _label,
                 "accuracy": _grp["accuracy"].mean(),
+                "std": _grp["accuracy"].std() if _model_id in FRONTIER_MODEL_IDS else np.nan,
                 "color": provider_styles.get(_provider, {"color": "#999"})["color"],
                 "kind": "skribe",
             }
@@ -1182,9 +1225,12 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
         # Baselines get a hatch pattern so they read as structurally different
         # from skribe/LLM variants at a glance, not just by color.
         for y, (_, row) in zip(y_pos, overview_df.iterrows()):
+            has_std = pd.notna(row["std"])
             ax6.barh(
                 y,
                 row["accuracy"],
+                xerr=row["std"] if has_std else None,
+                error_kw=dict(ecolor="#333333", capsize=3, linewidth=1.2, zorder=5),
                 color=row["color"],
                 hatch="//" if row["kind"] == "baseline" else "",
                 edgecolor="white" if row["kind"] == "baseline" else "none",
@@ -1192,7 +1238,7 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
                 zorder=3,
             )
             ax6.text(
-                row["accuracy"] + 0.005,
+                row["accuracy"] + (row["std"] if has_std else 0) + 0.005,
                 y,
                 f"{row['accuracy']:.3f}",
                 va="center",
@@ -1201,13 +1247,15 @@ def plot_progression(df: pd.DataFrame, output_dir: Path):
             )
         ax6.set_yticks(y_pos)
         ax6.set_yticklabels(overview_df["label"].tolist(), fontsize=9.5)
-        ax6.set_xlim(0, min(1.08, overview_df["accuracy"].max() + 0.08))
+        _overview_max = (overview_df["accuracy"] + overview_df["std"].fillna(0)).max()
+        ax6.set_xlim(0, min(1.08, _overview_max + 0.08))
         ax6.xaxis.set_major_formatter(mticker.PercentFormatter(xmax=1.0, decimals=0))
         ax6.set_xlabel(f"Mean accuracy ({n_datasets} datasets)", fontsize=12)
         ax6.set_title(
             "Overview: every baseline and skribe model/variant, best first\n"
-            "// hatch = classical ML baseline  ·  solid = skribe (LLM) variant",
-            fontsize=12,
+            "// hatch = baseline  ·  solid = skribe (LLM) variant  ·  "
+            "error bars = ±1 std across datasets\n(frontier models + baselines only)",
+            fontsize=11,
         )
         ax6.grid(axis="x", alpha=0.18)
         fig6.tight_layout()

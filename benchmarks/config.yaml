@@ -147,6 +147,35 @@ models:
     color: "#00140a"
     supports_web: true
     web_color: "#08601c"
+  # Anthropic's most capable widely-released model as of 2026-08-10, above
+  # claude-opus-5 below despite the name -- confirmed via the models-overview
+  # docs page ("For workloads that need the highest available capability, use
+  # Claude Fable 5") and 2x claude-opus-5's price ($10/$50 vs $5/$25 per MTok).
+  # GA June 9 2026 (created_at 2026-06-07 per /v1/models).
+  - model_id: claude-fable-5
+    label: Claude Fable 5
+    release_date: 2026-06-09
+    family: Claude 5
+    provider: anthropic
+    color: "#001008"
+    supports_web: true
+    web_color: "#005024"
+  # Originally flagged unverified (2026-07-27): the API accepted the string
+  # and litellm had registry data for it, but the model itself
+  # self-identified as Claude Sonnet 4.5 when asked directly, and the docs
+  # page that first named it looked like it could be spoofed/injected.
+  # Confirmed real on 2026-08-10 via /v1/models (own created_at, distinct
+  # capabilities) and the official models-overview docs page, which describes
+  # it coherently alongside every other current/legacy model -- self-report
+  # was simply an unreliable signal, as usual for LLM self-identification.
+  - model_id: claude-opus-5
+    label: Claude Opus 5
+    release_date: 2026-07-24  # created_at per /v1/models; GA date not separately confirmed
+    family: Claude 5
+    provider: anthropic
+    color: "#000000"
+    supports_web: true
+    web_color: "#004010"
 
   # Google Gemini (via Vertex AI) — ordered oldest GA -> newest
   - model_id: vertex_ai/gemini-2.5-flash

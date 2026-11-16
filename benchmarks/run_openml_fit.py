@@ -523,7 +523,7 @@ def main(argv=None):
         default=None,
         metavar="SECONDS",
         help="Per-LLM-call timeout for --model skribe (default: SkribeClassifier's own "
-        "default, currently 120s).",
+        "default, currently 3600s).",
     )
     args = parser.parse_args(argv)
 

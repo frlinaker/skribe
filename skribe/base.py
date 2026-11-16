@@ -311,7 +311,7 @@ class BaseSkribeEstimator(BaseEstimator):
         web_search: bool = False,
         context_prepass: bool = True,
         vertex_location: Optional[str] = None,
-        llm_timeout: float = 120,
+        llm_timeout: float = 3600,
         reasoning_effort: Optional[str] = None,
         reasoning_mode: Optional[str] = None,
         api_base: Optional[str] = None,
@@ -454,6 +454,7 @@ class BaseSkribeEstimator(BaseEstimator):
         "claude-opus-4-8",
         "claude-fable-5",
         "claude-sonnet-5",
+        "claude-opus-5",
     }
 
     # Union for external checks (e.g. warnings when model is unsupported).

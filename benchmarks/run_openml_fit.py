@@ -51,6 +51,69 @@ from benchmark_utils import (
 
 logger = logging.getLogger("skribe.benchmark")
 
+# Every invocation is archived here regardless of --output-dir, so results and
+# logs survive even when --output-dir points at a scratch location (e.g. /tmp,
+# which is wiped on reboot). Anchored to the repo root, not the cwd. The whole
+# artifacts/ tree is gitignored.
+RUNS_ARCHIVE_DIR = (
+    Path(__file__).resolve().parent.parent / "artifacts" / "benchmark_results" / "runs"
+)
+
+
+class _Tee:
+    """Write to the real stream and to the archived run.log."""
+
+    def __init__(self, stream, log_file):
+        self._stream, self._log = stream, log_file
+
+    def write(self, data):
+        self._stream.write(data)
+        self._log.write(data)
+        self._log.flush()
+        return len(data)
+
+    def flush(self):
+        self._stream.flush()
+        self._log.flush()
+
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+
+def _start_run_archive(args) -> tuple[Path, float]:
+    """Create runs/<utc-ts>_<model>_<dataset>/, tee stdout/stderr into run.log."""
+    started = time.time()
+    ts = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime(started))
+    name = f"{ts}_{args.llm or args.model}_{args.dataset}".replace("/", "-")
+    run_dir = RUNS_ARCHIVE_DIR / f"{name}_{os.getpid()}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "args.json").write_text(
+        json.dumps(
+            {"argv": sys.argv, "args": vars(args), "cwd": os.getcwd()}, indent=2, default=str
+        )
+    )
+    # skribe persists every LLM call and generated-code candidate (incl. failed
+    # ones) by default; keep them next to run.log instead of ./skribe_logs.
+    os.environ.setdefault("SKRIBE_LOG_DIR", str(run_dir / "llm"))
+    log_file = open(run_dir / "run.log", "a", buffering=1)
+    sys.stdout = _Tee(sys.stdout, log_file)
+    sys.stderr = _Tee(sys.stderr, log_file)
+    return run_dir, started
+
+
+def _archive_results(run_dir: Path, cache_dir: Path, started: float, rc: int) -> None:
+    """Copy cache files written during this run into the archive."""
+    import shutil
+
+    try:
+        for f in cache_dir.glob("*.json"):
+            if f.stat().st_mtime >= started - 1:
+                shutil.copy2(f, run_dir / f.name)
+        (run_dir / "exit_code").write_text(str(rc))
+    except Exception as e:  # archiving must never mask the real result
+        print(f"[archive] failed to copy results: {e}", file=sys.__stderr__)
+
+
 BASELINE_MODELS = list(BASELINE_META)
 ALL_MODELS = BASELINE_MODELS + ["skribe"]
 _MODEL_LOOKUP = {m["model_id"]: m for m in MODEL_PROGRESSION}
@@ -543,6 +606,7 @@ def main(argv=None):
     elif args.llm:
         parser.error("--llm is only valid when --model skribe")
 
+    run_dir, started = _start_run_archive(args)
     logging.basicConfig(level=logging.INFO, format="[%(asctime)s] %(message)s")
     logging.getLogger("skribe").setLevel(logging.WARNING)
     logger.setLevel(logging.INFO)
@@ -550,6 +614,16 @@ def main(argv=None):
     output_dir = Path(args.output_dir)
     cache_dir = output_dir / "cache"
     dataset = args.dataset
+    print(f"archive={run_dir}", flush=True)
+    rc = 1
+    try:
+        rc = _run(args, dataset, cache_dir)
+    finally:
+        _archive_results(run_dir, cache_dir, started, rc)
+    return rc
+
+
+def _run(args, dataset, cache_dir) -> int:
 
     label = args.model if args.model != "skribe" else _MODEL_LOOKUP[args.llm].get("label", args.llm)
     print(

@@ -138,6 +138,17 @@ benchmarks/monitor.sh
 Polls `artifacts/benchmark_results/cache/` and `artifacts/benchmark_results/run_llm.log`
 every 30s and prints cache-file counts per model plus the most recent log lines.
 
+## Run archive
+
+Every `run_openml_fit.py` invocation is archived to
+`artifacts/benchmark_results/runs/<utc-timestamp>_<llm-or-model>_<dataset>_<pid>/`
+(gitignored), regardless of `--output-dir`: `run.log` (full stdout/stderr),
+`args.json`, `exit_code`, a copy of each cache JSON written during the run, and `llm/` —
+skribe's own record of every LLM call and generated-code candidate, including ones that
+failed validation (see `skribe/persist.py`).
+So results survive even if `--output-dir` points at `/tmp`. To restore them into
+the main cache: `cp artifacts/benchmark_results/runs/*/<dataset>-*.json artifacts/benchmark_results/cache/`.
+
 ## Collating results
 
 ```bash

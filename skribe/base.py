@@ -425,6 +425,10 @@ class BaseSkribeEstimator(BaseEstimator):
         "gpt-5",
         "openai/gpt-5.6-sol",
         "openai/gpt-5.6-terra",
+        "gpt-6-astra",
+        "gpt-6.1-sol",
+        "gpt-6.2-astra",
+        "gpt-6.2-sol",
     }
 
     # Models that support web search via web_search_options in the Chat Completions API.
@@ -462,6 +466,8 @@ class BaseSkribeEstimator(BaseEstimator):
         "claude-fable-5",
         "claude-sonnet-5",
         "claude-opus-5",
+        "claude-opus-5-5",
+        "claude-fable-5-2",
     }
 
     # Union for external checks (e.g. warnings when model is unsupported).

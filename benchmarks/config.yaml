@@ -70,6 +70,50 @@ models:
     color: "#4a0808"
     supports_web: true
     web_color: "#804040"
+  # GPT-6 generation. Model IDs/pricing/flagship status confirmed 2026-11-16
+  # against developers.openai.com/api/docs/models; release_date is created
+  # per GET /v1/models. gpt-6-astra is the documented flagship ($10/$50 per
+  # MTok); gpt-6.1-sol is the near-Astra, cheaper tier ($2/$10). Highest
+  # settings (per the reasoning guide): reasoning effort up to "max" and
+  # reasoning mode "pro" -- run via --reasoning-effort max / --reasoning-mode
+  # pro (separate cache keys), not set here.
+  - model_id: gpt-6-astra
+    label: GPT-6 Astra
+    release_date: 2026-08-27
+    family: GPT-6
+    provider: openai
+    color: "#380606"
+    supports_web: true
+    web_color: "#703838"
+  - model_id: gpt-6.1-sol
+    label: GPT-6.1 Sol
+    release_date: 2026-09-27
+    family: GPT-6
+    provider: openai
+    color: "#240404"
+    supports_web: true
+    web_color: "#603030"
+  # GPT-6.2 generation, confirmed 2026-11-18 against GET /v1/models (created)
+  # and developers.openai.com/api/docs/models. gpt-6.2-astra is the documented
+  # flagship ($8/$40 per MTok, "for the hardest projects"); gpt-6.2-sol is the
+  # cheaper everyday tier ($2/$10). Tier order: Astra > Sol > Terra > Luna.
+  # Reasoning effort up to "max" on both; run via --reasoning-effort max.
+  - model_id: gpt-6.2-astra
+    label: GPT-6.2 Astra
+    release_date: 2026-10-31
+    family: GPT-6.2
+    provider: openai
+    color: "#100202"
+    supports_web: true
+    web_color: "#502828"
+  - model_id: gpt-6.2-sol
+    label: GPT-6.2 Sol
+    release_date: 2026-11-02
+    family: GPT-6.2
+    provider: openai
+    color: "#1c0303"
+    supports_web: true
+    web_color: "#583030"
 
   # Anthropic Claude — ordered oldest -> newest. release_date is each
   # model's created_at from GET /v1/models. All ten support the native
@@ -176,6 +220,30 @@ models:
     color: "#000000"
     supports_web: true
     web_color: "#004010"
+  # Claude 5.5 generation, confirmed 2026-11-16 against the official
+  # models-overview page and GET /v1/models (created_at). claude-fable-5-2
+  # is the top public model ($8/$40 per MTok; "for demanding reasoning and
+  # long-horizon agentic work"); claude-opus-5-5 is the recommended default
+  # ($4/$20). Highest setting: output_config.effort "max" (supported on both;
+  # the docs say "xhigh" is the recommended step-up for hard work and "max"
+  # is for measuring the ceiling) -- run via --reasoning-effort max. The
+  # restricted claude-mythos-5-2 is not benchmarked (verified orgs only).
+  - model_id: claude-opus-5-5
+    label: Claude Opus 5.5
+    release_date: 2026-09-21
+    family: Claude 5.5
+    provider: anthropic
+    color: "#0a6b3a"
+    supports_web: true
+    web_color: "#4fae7e"
+  - model_id: claude-fable-5-2
+    label: Claude Fable 5.2
+    release_date: 2026-11-09
+    family: Claude 5.5
+    provider: anthropic
+    color: "#064d2a"
+    supports_web: true
+    web_color: "#3f9468"
 
   # Google Gemini (via Vertex AI) — ordered oldest GA -> newest
   - model_id: vertex_ai/gemini-2.5-flash
@@ -229,6 +297,33 @@ models:
     # (too new), so without this skribe would send an untruncated prompt on
     # every first attempt. Passed to SkribeClassifier(known_context_windows=...)
     # by run_openml_fit.py rather than skribe/ reading this file itself.
+    max_input_tokens: 1048576
+  # Gemini 4 generation. Model codes/1M context from aistudio.google.com/docs/
+  # models; all three were callable on 2026-11-16 via Vertex AI at location
+  # "global" only (404 at us-central1). Docs name gemini-4-carbon the
+  # flagship ("most capable reasoning model"); press coverage calls
+  # gemini-4-argon the flagship (announced 2026-09-30) -- sources disagree,
+  # so both are benchmarked. Google publishes no release dates for Carbon;
+  # its date here is the first day it was confirmed reachable. Highest
+  # thinking_level per aistudio.google.com/docs/thinking is "high" on
+  # Carbon/Argon (no "max"); the provider default is "medium", so pass
+  # --reasoning-effort high. No +web variant: Google-Search grounding on
+  # Gemini 4 is not yet verified.
+  - model_id: vertex_ai/gemini-4-argon
+    label: Gemini 4 Argon
+    release_date: 2026-09-30  # announcement date; general availability not confirmed
+    family: Gemini 4
+    provider: google
+    vertex_region: global
+    color: "#0a2a73"
+    max_input_tokens: 1048576
+  - model_id: vertex_ai/gemini-4-carbon
+    label: Gemini 4 Carbon
+    release_date: 2026-11-16  # first confirmed reachable; not published by Google
+    family: Gemini 4
+    provider: google
+    vertex_region: global
+    color: "#061a4d"
     max_input_tokens: 1048576
 
   # Ollama (local/self-hosted, no web_search support) — run via an

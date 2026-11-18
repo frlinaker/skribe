@@ -13,6 +13,7 @@ from sklearn.base import BaseEstimator
 from sklearn.exceptions import NotFittedError
 
 from .explain import Explanation
+from .persist import RunLog, resolve_log_dir
 from .postprocess import ConstantPostProcessor, NoOpPostProcessor, find_unverified_thresholds
 from .prompt_markers import CONTEXT_END, CONTEXT_START, DATA_MARKER
 from .utils import (
@@ -23,6 +24,7 @@ from .utils import (
     prepare_training_data,
     sanitize_dataset_description,
 )
+from .version import __version__
 
 logger = logging.getLogger("skribe")
 
@@ -77,6 +79,10 @@ _TIMEOUT_BACKOFF_SECONDS = 5
 
 class _OutputTruncated(Exception):
     """Raised when the LLM signals finish_reason='length' (output cut off)."""
+
+    def __init__(self, content: str = ""):
+        super().__init__(content)
+        self.content = content  # the partial output, kept for persistence
 
 
 class _UnverifiedThreshold(Exception):
@@ -324,6 +330,7 @@ class BaseSkribeEstimator(BaseEstimator):
         api_base: Optional[str] = None,
         postprocessor: Optional[Union[ConstantPostProcessor, NoOpPostProcessor]] = None,
         known_context_windows: Optional[dict] = None,
+        log_dir: Union[str, os.PathLike, bool, None] = None,
     ):
         self.model = model
         self.verbose = verbose
@@ -336,6 +343,10 @@ class BaseSkribeEstimator(BaseEstimator):
         self.reasoning_effort = reasoning_effort
         self.reasoning_mode = reasoning_mode
         self.api_base = api_base
+        # Where every LLM call and generated-code candidate (including the
+        # ones that fail validation) is persisted -- see skribe/persist.py.
+        # None = on, at $SKRIBE_LOG_DIR or ./skribe_logs; False = off.
+        self.log_dir = log_dir
         # Injected rather than hardcoded so a caller can swap in a different
         # postprocessing strategy without subclassing -- see
         # skribe/postprocess.py for what ConstantPostProcessor does. Off by
@@ -368,6 +379,7 @@ class BaseSkribeEstimator(BaseEstimator):
         self.context_summary_: Optional[str] = None
         self.context_prepass_prompt_: Optional[str] = None
         self.fit_log_: list = []
+        self._run_log: Optional[RunLog] = None
 
     # used by GridSearchCV
     def get_params(self, deep=True):
@@ -386,6 +398,7 @@ class BaseSkribeEstimator(BaseEstimator):
             "api_base": self.api_base,
             "postprocessor": self.postprocessor,
             "known_context_windows": self.known_context_windows,
+            "log_dir": self.log_dir,
         }
 
     # used by GridSearchCV
@@ -398,11 +411,13 @@ class BaseSkribeEstimator(BaseEstimator):
     def __getstate__(self):
         state = self.__dict__.copy()
         state.pop("predict_fn", None)  # Remove predict_fn on serialization
+        state.pop("_run_log", None)  # per-fit file handle state, meaningless after load
         return state
 
     # used by joblib
     def __setstate__(self, state):
         self.__dict__.update(state)
+        self._run_log = None  # per-fit state, never serialized
         # Recompile the generated heuristic on re-creation of the object
         if getattr(self, "python_code_", None):
             try:
@@ -512,7 +527,76 @@ class BaseSkribeEstimator(BaseEstimator):
         entry["citations"] = citations
         self.fit_log_.append(entry)
 
+    def _persist(self, kind: str, files: Optional[dict] = None, **fields) -> None:
+        """Record an event in this fit's run log (a no-op when disabled)."""
+        try:
+            if getattr(self, "_run_log", None) is None:
+                # getattr: models pickled before log_dir existed lack it
+                base = resolve_log_dir(getattr(self, "log_dir", None))
+                if base is None:
+                    return
+                self._run_log = RunLog(
+                    base,
+                    self.model,
+                    meta={
+                        "skribe_version": __version__,
+                        "model": self.model,
+                        "params": {
+                            k: v
+                            for k, v in self.get_params().items()
+                            if k not in ("postprocessor", "known_context_windows")
+                        },
+                    },
+                )
+            self._run_log.event(kind, files=files, **fields)
+        except Exception as e:  # logging must never break a fit
+            logger.warning("skribe: could not persist %s event (%s)", kind, e)
+
     def _call_llm(
+        self,
+        prompt: str,
+        web_search: bool = False,
+        reasoning_effort: Optional[str] = None,
+        web_search_config: Optional[dict] = None,
+        reasoning_mode: Optional[str] = None,
+    ) -> str:
+        """Call the LLM (see ``_call_llm_impl``) and persist the exchange:
+        the prompt, the raw response -- or, on failure, the error plus any
+        partial output the exception carried -- and the elapsed time."""
+        started = time.time()
+        common = {
+            "model": self.model,
+            "web_search": web_search,
+            "reasoning_effort": reasoning_effort or self.reasoning_effort,
+            "reasoning_mode": reasoning_mode or self.reasoning_mode,
+        }
+        try:
+            text = self._call_llm_impl(
+                prompt, web_search, reasoning_effort, web_search_config, reasoning_mode
+            )
+        except Exception as e:
+            self._persist(
+                "llm_call",
+                files={
+                    "prompt": (prompt, "txt"),
+                    "partial_response": (getattr(e, "content", None), "txt"),
+                },
+                status="error",
+                error=f"{type(e).__name__}: {e}",
+                elapsed_s=round(time.time() - started, 2),
+                **common,
+            )
+            raise
+        self._persist(
+            "llm_call",
+            files={"prompt": (prompt, "txt"), "response": (str(text), "txt")},
+            status="ok",
+            elapsed_s=round(time.time() - started, 2),
+            **common,
+        )
+        return text
+
+    def _call_llm_impl(
         self,
         prompt: str,
         web_search: bool = False,
@@ -1225,6 +1309,7 @@ class BaseSkribeEstimator(BaseEstimator):
         self.context_summary_ = None
         self.context_prepass_prompt_ = None
         self.fit_log_ = []
+        self._run_log = None  # a fresh run directory per fit()
 
         if self.max_train_rows is not None and len(data) > self.max_train_rows:
             logger.info(
@@ -1391,6 +1476,11 @@ class BaseSkribeEstimator(BaseEstimator):
         self.raw_python_code_ = raw_code
         self.python_code_ = extended_code
         self.predict_fn = predict_fn
+        self._persist(
+            "fit_done",
+            files={"final_code": (extended_code, "py")},
+            fit_log=self.fit_log_,
+        )
         return self
 
     def _generate_code(
@@ -1444,6 +1534,7 @@ class BaseSkribeEstimator(BaseEstimator):
             )
             force_search_next = False
             log_len_before = len(self.fit_log_)
+            raw_code = extended_code = None
             try:
                 code = self._call_llm(base_prompt + feedback, web_search=attempt_web_search)
             except (_OutputTruncated, _ContextWindowExceeded):
@@ -1511,6 +1602,9 @@ class BaseSkribeEstimator(BaseEstimator):
                 # _validate_predict_fn -- it's a real, working fallback if
                 # every remaining attempt is rejected for this same reason.
                 last_unverified = (raw_code, extended_code, fn)
+                self._persist_code_attempt(
+                    attempt, "unverified_threshold", code, extended_code, error=str(e)
+                )
                 site = e.site
                 feature_desc = f"'{site['feature']}'" if site["feature"] else "a feature"
                 logger.warning(
@@ -1544,6 +1638,9 @@ class BaseSkribeEstimator(BaseEstimator):
                 logger.warning(
                     f"[Validation] Attempt {attempt + 1}/{self.max_retries + 1} failed: {error_detail}"
                 )
+                self._persist_code_attempt(
+                    attempt, "failed", code, extended_code, error=error_detail
+                )
                 self.fit_log_.append(
                     {
                         "stage": "validation",
@@ -1561,6 +1658,7 @@ class BaseSkribeEstimator(BaseEstimator):
                     time.sleep(5)
                 continue
 
+            self._persist_code_attempt(attempt, "ok", raw_code, extended_code)
             return raw_code, extended_code, fn
 
         # Every attempt failed; surface the most recent error. Note this
@@ -1569,6 +1667,31 @@ class BaseSkribeEstimator(BaseEstimator):
         # above), so any exhaustion here is a genuine, unrecovered failure.
         assert last_error is not None
         raise last_error
+
+    def _persist_code_attempt(
+        self,
+        attempt: int,
+        status: str,
+        raw_code: Optional[str],
+        extended_code: Optional[str],
+        error: Optional[str] = None,
+    ) -> None:
+        """Persist one code-generation attempt with its outcome. ``raw_code`` is
+        what the LLM first returned; ``extended_code`` is what actually got
+        validated (after the extend/postprocess passes) and is None when the
+        attempt died before reaching them."""
+        self._persist(
+            "code_attempt",
+            files={
+                "raw": (raw_code, "py"),
+                "extended": (extended_code, "py"),
+                "error": (error, "txt"),
+            },
+            attempt=attempt + 1,
+            max_attempts=self.max_retries + 1,
+            status=status,
+            error=(error or "").splitlines()[0] if error else None,
+        )
 
     def _validate_predict_fn(self, predict_fn: Callable, rows: list, labels: list = []) -> None:
         """Run the compiled function over the training sample to confirm it
@@ -1636,6 +1759,14 @@ class BaseSkribeEstimator(BaseEstimator):
                     attempt + 1,
                     self._EXTEND_MAX_RETRIES,
                     e,
+                )
+                self._persist(
+                    "extend_attempt",
+                    files={"code": (locals().get("refined_code"), "py")},
+                    attempt=attempt + 1,
+                    max_attempts=self._EXTEND_MAX_RETRIES,
+                    status="failed",
+                    error=f"{type(e).__name__}: {e}",
                 )
                 feedback = (
                     f"\n\nThe code you returned has an error: {e}\n"

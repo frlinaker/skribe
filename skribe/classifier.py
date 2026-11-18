@@ -54,6 +54,7 @@ class SkribeClassifier(ClassifierMixin, BaseSkribeEstimator):
         api_base: str | None = None,
         postprocessor=None,
         known_context_windows: dict | None = None,
+        log_dir: str | bool | None = None,
     ):
         super().__init__(
             model=resolve_model(model),
@@ -69,6 +70,7 @@ class SkribeClassifier(ClassifierMixin, BaseSkribeEstimator):
             api_base=api_base,
             postprocessor=postprocessor,
             known_context_windows=known_context_windows,
+            log_dir=log_dir,
         )
 
     def fit(self, X, y, synthetic_features=None, dataset_description=None) -> "SkribeClassifier":

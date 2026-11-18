@@ -69,6 +69,7 @@ class SkribeFeatureEngineer(TransformerMixin, BaseSkribeEstimator):
         api_base: str | None = None,
         postprocessor=None,
         known_context_windows: dict | None = None,
+        log_dir: str | bool | None = None,
     ):
         super().__init__(
             model=resolve_model(model),
@@ -84,6 +85,7 @@ class SkribeFeatureEngineer(TransformerMixin, BaseSkribeEstimator):
             api_base=api_base,
             postprocessor=postprocessor,
             known_context_windows=known_context_windows,
+            log_dir=log_dir,
         )
         self.new_feature_names_ = None
 

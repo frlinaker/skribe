@@ -65,6 +65,9 @@ scratch*
 # Artifacts
 artifacts/
 
+# Persisted LLM calls / generated code (skribe/persist.py)
+skribe_logs/
+
 # Claude Code settings (per-machine; not shared)
 .claude/
 tmp/

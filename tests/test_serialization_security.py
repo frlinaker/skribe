@@ -34,6 +34,10 @@ ALLOWED_STATE_FIELDS = {
     "llm_timeout",
     "reasoning_effort",
     "reasoning_mode",
+    # Where LLM calls/generated code are persisted (see skribe/persist.py):
+    # a plain path string/PathLike, or True/False/None -- no credentials. The
+    # live per-fit RunLog (_run_log) is dropped in __getstate__ and is not here.
+    "log_dir",
     "target_name_",
     "feature_names_",
     "raw_python_code_",

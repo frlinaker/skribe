@@ -5,6 +5,43 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Unreleased]
+### Added
+- **LLM output is now persisted to disk by default.** Every `fit()` writes a
+  per-run folder (under `./skribe_logs/`, or `$SKRIBE_LOG_DIR`) holding every
+  LLM call (prompt, raw response or error with any partial output, timing) and
+  every generated-code candidate, including the ones that fail validation,
+  with the error that rejected them. Previously a failed fit kept only the
+  error message and the generated code was lost. New `log_dir` constructor
+  param on all estimators (`False` disables it; `SKRIBE_LOG_DIR=off` does the
+  same globally). See `skribe/persist.py` and the README section
+  "Inspecting what the LLM returned".
+- Benchmarks: `run_openml_fit.py` archives every invocation (log, args, exit
+  code, result JSON, and skribe's own `llm/` logs) under
+  `artifacts/benchmark_results/runs/`, independent of `--output-dir`, so
+  results written to a scratch location no longer vanish on reboot.
+- `gpt-6.2-astra` / `gpt-6.2-sol` (OpenAI) and `claude-opus-5-5` /
+  `claude-fable-5-2` (Anthropic) web-search support; GPT-6.x, Claude 5.5 and
+  Gemini 4 entries in the benchmark config.
+
+### Changed
+- **Behavior change, privacy-relevant:** because persistence is on by default,
+  skribe now writes prompts, which include a sample of the training data, to
+  the local filesystem. Add `skribe_logs/` to `.gitignore`, or pass
+  `log_dir=False` / set `SKRIBE_LOG_DIR=off` for sensitive data. Pickled and
+  joblib models are unaffected and still contain only the code and fitted
+  metadata.
+
+### Fixed
+- The pre-validation unresolved-name check wrongly rejected valid code that
+  binds names by tuple/list/starred unpacking (`v1, v2 = ...`), annotated
+  assignment, or a function-local import, reporting e.g. "name 'v1' is not
+  defined". Because the retry loop fed that false error back, the model could
+  not fix code that was already correct and the fit failed after every retry.
+  Real typos are still caught.
+
+---
+
 ## [0.2.3] — 2026-07-17 — Ollama support
 ### Added
 - `api_base` constructor param (also read from the `OLLAMA_API_BASE`

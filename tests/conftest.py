@@ -7,3 +7,7 @@ import os
 # without passing an explicit model. Export SKRIBE_MODEL yourself to run
 # the suite against a different model.
 os.environ.setdefault("SKRIBE_MODEL", "gpt-5.4-mini")
+
+# LLM-output persistence is on by default (see skribe/persist.py); keep the
+# suite from littering the working tree. tests/test_persist.py opts back in.
+os.environ.setdefault("SKRIBE_LOG_DIR", "off")

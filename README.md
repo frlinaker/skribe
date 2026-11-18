@@ -212,6 +212,35 @@ API keys are read from the usual per-provider environment variables (`OPENAI_API
 
 ---
 
+## Inspecting what the LLM returned
+
+Every `fit()` records what the LLM sent back to disk, so a failed or surprising fit can be investigated after the fact. This is **on by default**: each fit writes one folder under `./skribe_logs/`:
+
+```
+skribe_logs/<utc-timestamp>_<model>_<pid>_<n>/
+    meta.json                        model, parameters, skribe version
+    events.jsonl                     one line per event, in order
+    003_llm_call_prompt.txt          the full prompt sent
+    003_llm_call_response.txt        the raw response (or the error, plus any partial output)
+    004_code_attempt_raw.py          what the LLM first returned
+    004_code_attempt_extended.py     the code that was actually validated
+    004_code_attempt_error.txt       why it failed validation (if it did)
+    NNN_fit_done_final_code.py       the code that was kept
+```
+
+Failed attempts are kept alongside successful ones, which is usually the part you want when generated code is rejected.
+
+```python
+SkribeClassifier(log_dir="runs/logs")   # write somewhere else
+SkribeClassifier(log_dir=False)         # turn it off
+```
+
+The `SKRIBE_LOG_DIR` environment variable does the same for every estimator (`export SKRIBE_LOG_DIR=/data/skribe_logs`, or `SKRIBE_LOG_DIR=off`); an explicit `log_dir=` argument wins. Writing never raises: an unwritable directory logs one warning and the fit carries on.
+
+> **Privacy:** these logs contain the full prompts, which include a sample of your training data, plus any web-search results. Treat the folder like the data itself, keep it out of version control (add `skribe_logs/` to `.gitignore`), and disable logging with `log_dir=False` for sensitive data. Pickled/joblib models never contain the logs, only the code and fitted metadata.
+
+---
+
 ## When *not* to use it
 
 - **Opaque / encoded features.** When columns carry no semantic meaning (hashed IDs, cryptic codes), the LLM has no knowledge to exploit and direct classification can underperform a trained model — use `SkribeFeatureEngineer` + a classical model, or just a classical model.

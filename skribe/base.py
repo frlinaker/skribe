@@ -252,10 +252,17 @@ def _check_unresolved_names(code: str) -> None:
         declared = {a.arg for a in func.args.args}
         bound = set()
         for node in ast.walk(func):
-            if isinstance(node, ast.Assign):
-                for t in node.targets:
-                    if isinstance(t, ast.Name):
-                        bound.add(t.id)
+            # Any name in a Store context is bound, whatever the syntax that
+            # binds it: plain, tuple/list/starred unpacking (``a, b = ...``),
+            # annotated (``x: int = 1``), augmented, for/with/walrus targets.
+            # Only matching ``Assign`` with a bare ``Name`` target used to
+            # falsely reject valid unpacking code (every name unpacked was
+            # reported "not defined"), burning all retries on correct code.
+            if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+                bound.add(node.id)
+            elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                for alias in node.names:
+                    bound.add(alias.asname or alias.name.split(".")[0])
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 bound.add(node.name)
                 bound |= {a.arg for a in node.args.args}

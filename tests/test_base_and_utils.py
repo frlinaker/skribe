@@ -474,6 +474,34 @@ def test_check_unresolved_names_allows_module_level_helper_and_import():
     _check_unresolved_names(code)  # must not raise
 
 
+@pytest.mark.parametrize(
+    "body",
+    [
+        "v1, v2 = features['v1'], features['v2']\n    return v1 + v2",
+        "[a, b] = [1, 2]\n    return a + b",
+        "a, *rest = [1, 2, 3]\n    return a + len(rest)",
+        "(a, (b, c)) = (1, (2, 3))\n    return a + b + c",
+        "x: int = 3\n    return x",
+        "total = 0\n    total += 1\n    return total",
+        "import math\n    return math.floor(1.5)",
+        "from math import floor as fl\n    return fl(1.5)",
+        "for i, j in [(1, 2)]:\n        k = i + j\n    return k",
+    ],
+)
+def test_check_unresolved_names_allows_every_binding_form(body):
+    """Names bound by tuple/list/starred unpacking, annotated assignment and
+    function-local imports are bound -- previously only a plain ``x = ...``
+    counted, so valid unpacking code (e.g. ``v1, v2, ... = values``) was
+    rejected as "name 'v1' is not defined" on every retry."""
+    _check_unresolved_names(f"def predict(**features):\n    {body}\n")  # must not raise
+
+
+def test_check_unresolved_names_still_catches_a_real_typo_next_to_unpacking():
+    code = "def predict(**features):\n    a, b = 1, 2\n    return a + c\n"
+    with pytest.raises(NameError, match="'c'"):
+        _check_unresolved_names(code)
+
+
 def test_check_unresolved_names_still_catches_genuine_typo_with_suggestion():
     # A name that doesn't match anything bound in the function, module
     # scope, or builtins is still a real bug -- and now that module-level
